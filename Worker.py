@@ -371,7 +371,7 @@ class Worker():
         self.Q_target = Q_Net(state_size=8, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=bilstm, dropout=dropout).to(device)
 
         self.Price_training = Price_Net(state_size=8, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=bilstm, dropout=dropout).to(device)
-        self.Mask_Net = MLP([5,32,64,32,4], arl = True, dropout = dropout).to(device)
+        self.Mask_Net = MLP([7,32,64,32,4], arl = True, dropout = dropout).to(device)
 
         if self.intelligent_worker:
             self.Worker_Q_training = Worker_Q_Net(input_size=15, history_order_size=5, output_dim=2, bi_direction=bilstm, dropout=dropout).to(device)
@@ -412,7 +412,7 @@ class Worker():
 
         self.njobs = njobs
 
-    def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None, train=True):
+    def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None, train=True, mask_exploration=0):
         self.time = 0
 
         if train:
@@ -522,22 +522,24 @@ class Worker():
         self.worker_assign_order = [0]*self.num
         self.worker_reject_order = [0]*self.num
 
-        self.gen_mask()
+        self.gen_mask(mask_exploration)
 
-    def gen_mask(self):
+    def gen_mask(self,exploration_rate=0):
         torch.set_grad_enabled(False)
-        x = np.concatenate([self.observe_space[:,:2], np.expand_dims(self.speed, axis=-1), np.expand_dims(self.capacity, axis=-1), np.expand_dims(self.reservation_value, axis=-1)],axis=-1)
+        x = np.concatenate([self.observe_space[:,:2], np.expand_dims(self.speed, axis=-1), np.expand_dims(self.capacity, axis=-1), np.expand_dims(self.reservation_value, axis=-1), np.expand_dims(self.positive_history, axis=-1), np.expand_dims(self.negative_history, axis=-1)],axis=-1)
         x = norm_mask(x)
         x = torch.from_numpy(x).float().to(self.device)
         mask = self.Mask_Net(x)
         mask = mask[:,:2]
-        mask = torch.softmax(mask,dim=-1)
-        mask = torch.multinomial(mask, 1).squeeze()
-        self.mask = mask.int()
-
+        mask = torch.softmax(mask,dim=-1)[:,0]
+        rand = torch.rand_like(mask)
+        self.mask = (mask>=rand).int()
+        rand = torch.randint(0, 2, self.mask.shape,dtype=torch.int).to(self.device)
+        exploration_matrix = torch.rand_like(self.mask,dtype=torch.float)
+        self.mask[exploration_matrix<exploration_rate] = rand[exploration_matrix<exploration_rate]
 
     def mask_append(self,episode=0):
-        x = np.concatenate([self.observe_space[:,:2], np.expand_dims(self.speed, axis=-1), np.expand_dims(self.capacity, axis=-1), np.expand_dims(self.reservation_value, axis=-1)],axis=-1)
+        x = np.concatenate([self.observe_space[:,:2], np.expand_dims(self.speed, axis=-1), np.expand_dims(self.capacity, axis=-1), np.expand_dims(self.reservation_value, axis=-1), np.expand_dims(self.positive_history, axis=-1), np.expand_dims(self.negative_history, axis=-1)],axis=-1)
         x = norm_mask(x)
         y = self.worker_reward
         mask = self.mask
@@ -653,6 +655,8 @@ class Worker():
             worker_state_next, order_state_next, order_num_next, new_order_state_next, \
             reservation_value, price_next, worker_action, worker_reward, workload_current, workload_next, worker_id, mask = self.buffer.sample_episode(
             episode, self.device)
+
+        # print(new_order_state.shape, worker_state.shape, order_state.shape)
 
         # first calculate the advantage for PPO actor
         x1, x2, x3 = norm(new_order_state, worker_state, order_state)
@@ -874,12 +878,18 @@ class Worker():
             x, mask, y = x.float(), mask.int(), y.float()
             y_hat = self.Mask_Net(x)
             y_hat_mu = y_hat[:,:2]
-            y_hat_sigma = y_hat[:,:2]
+            y_hat_sigma = y_hat[:,2:]
+            softplus = nn.Softplus()
+            y_hat_sigma = softplus(y_hat_sigma)
 
             y_hat_mu = y_hat_mu[torch.arange(y_hat.shape[0]),mask]
             y_hat_sigma = y_hat_sigma[torch.arange(y_hat.shape[0]),mask]
+
             mse = self.loss_func(y_hat_mu,y)
-            loss = loss_gaussion(y, y_hat_mu, y_hat_sigma)
+            gaussion = loss_gaussion(y, y_hat_mu, y_hat_sigma)
+            # mape = loss_mape(y_hat_mu, y)
+            # loss = gaussion + mape * 0.01 + mse
+            loss = gaussion
 
             self.optim_mask.zero_grad()
             loss.backward()
@@ -1041,6 +1051,11 @@ def kl_divergence(mu1, sigma1, mu2, sigma2):
 
 def loss_gaussion(y, mu, sigma):
     loss = torch.log(sigma) + (y-mu)**2/(2*sigma**2)
+    return torch.mean(loss)
+
+def loss_mape(y_hat, y, epsilon = 1e-5):
+    # epsilon = (y == 0).float()
+    loss = torch.abs(y_hat - y) / (torch.abs(y) +epsilon)
     return torch.mean(loss)
 
 

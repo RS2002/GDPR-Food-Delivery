@@ -130,7 +130,7 @@ class Q_Net(nn.Module):
         super().__init__()
         self.worker_net = Worker_Net(state_size=state_size, order_size=history_order_size, output_dim=hidden_dim, bi_direction=bi_direction, dropout=dropout)
         self.order_net = Order_Net(state_size=current_order_size, output_size=hidden_dim, dropout=dropout)
-        self.mask_net = Worker_Net(state_size=state_size-2, order_size=history_order_size-1, output_dim=hidden_dim, bi_direction=bi_direction, dropout=dropout)
+        self.mask_net = Worker_Net(state_size=state_size-4, order_size=history_order_size-1, output_dim=hidden_dim, bi_direction=bi_direction, dropout=dropout)
         self.attention = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head, dropout=dropout)
         self.sigmoid = nn.Sigmoid()
 
@@ -144,7 +144,7 @@ class Q_Net(nn.Module):
         order = self.order_net(order)
         worker = self.worker_net(x_state,x_order,order_num)
         if mask is not None:
-            x_state = torch.concat([x_state[...,:-3],x_state[...,-1:]],dim=-1) # drop the history price
+            x_state = torch.concat([x_state[...,:-5],x_state[...,-1:]],dim=-1) # drop the history price
             x_order = x_order[...,:-1] # drop the order price
             worker_mask = self.mask_net(x_state,x_order,order_num)
             while len(mask.shape)<len(worker.shape):
@@ -160,7 +160,7 @@ class Price_Net(nn.Module):
         super().__init__()
         self.worker_net = Worker_Net(state_size=state_size, order_size=history_order_size, output_dim=hidden_dim, bi_direction=bi_direction, dropout=dropout)
         self.order_net = Order_Net(state_size=current_order_size, output_size=hidden_dim, dropout=dropout)
-        self.mask_net = Worker_Net(state_size=state_size-2, order_size=history_order_size-1, output_dim=hidden_dim, bi_direction=bi_direction, dropout=dropout)
+        self.mask_net = Worker_Net(state_size=state_size-4, order_size=history_order_size-1, output_dim=hidden_dim, bi_direction=bi_direction, dropout=dropout)
         self.attention_price_mu = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head, dropout=dropout)
         self.attention_price_sigma = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head, dropout=dropout)
         self.sigmoid = nn.Sigmoid()
@@ -176,7 +176,7 @@ class Price_Net(nn.Module):
         worker = self.worker_net(x_state,x_order,order_num)
 
         if mask is not None:
-            x_state = torch.concat([x_state[...,:-3],x_state[...,-1:]],dim=-1) # drop the history price
+            x_state = torch.concat([x_state[...,:-5],x_state[...,-1:]],dim=-1) # drop the history price
             x_order = x_order[...,:-1] # drop the order price
             worker_mask = self.mask_net(x_state,x_order,order_num)
             while len(mask.shape)<len(worker.shape):

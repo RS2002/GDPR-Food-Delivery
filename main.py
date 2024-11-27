@@ -17,10 +17,10 @@ def get_args():
     parser.add_argument('--eps_clip', type=float, default=0.1)
     parser.add_argument('--max_step', type=int, default=60)
     parser.add_argument('--converge_epoch', type=int, default=10)
-    parser.add_argument('--minimum_episode', type=int, default=500)
+    parser.add_argument('--minimum_episode', type=int, default=700)
     parser.add_argument('--worker_num', type=int, default=1000)
     parser.add_argument('--buffer_capacity', type=int, default=30000)
-    parser.add_argument('--demand_sample_rate', type=float, default=0.2)
+    parser.add_argument('--demand_sample_rate', type=float, default=0.6)
     parser.add_argument('--order_max_wait_time', type=float, default=5.0)
     parser.add_argument('--order_threshold', type=float, default=40.0)
     parser.add_argument('--reward_parameter', type=float, nargs='+', default=[3.0,5.0,4.0,3.0,1.0,5.0,0.0])
@@ -35,7 +35,7 @@ def get_args():
     parser.add_argument('--kl_threshold', type=float, default=0.05)
 
     parser.add_argument('--eval_episode', type=int, default=10)
-    parser.add_argument('--critic_episode', type=int, default=4)
+    parser.add_argument('--critic_episode', type=int, default=2)
     parser.add_argument('--actor_episode', type=int, default=1)
 
     parser.add_argument('--epsilon', type=float, default=1.0)
@@ -56,9 +56,8 @@ def get_args():
     parser.add_argument('--worker_reject_punishment', type=float, default=0.0)
     parser.add_argument("--probability_worker", action="store_true",default=False)
 
-    parser.add_argument("--demand_path",type=str,default="./data/demand_evening_onehour.csv")
-    parser.add_argument("--zone_table_path",type=str,default="./data/zone_table.csv")
-    parser.add_argument('--reward_threshold', type=float, default=-1)
+    parser.add_argument("--demand_path",type=str,default="../data/demand_evening_onehour.csv")
+    parser.add_argument("--zone_table_path",type=str,default="../data/zone_table.csv")
 
     args = parser.parse_args()
     return args
@@ -117,125 +116,148 @@ def main():
 
     best_reward = -1e-8
     best_epoch = 0
+
+    best_reward_worker = -1e-8
+    best_epoch_worker = 0
+
     dic_list = []
 
     j = args.init_episode
     exploration_rate = max(exploration_rate * (epsilon_decay_rate**j), epsilon_final)
+    mask_exploration = exploration_rate
 
     critic_episode = args.critic_episode
     current_critic_episode = 0
     actor_episode = args.actor_episode
     current_actor_episode = 0
-    critic_phase = True
 
-    checkpoint = [current_critic_episode,current_actor_episode,critic_phase,exploration_rate]
+    critic_phase = False
 
     mask_phase = False
+
 
     while True:
         j += 1
 
         c_loss, a_loss, w_loss = 0, 0, 0
 
-        if mask_phase:
-            reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
-            worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value, speed=speed,
-                         capacity=capacity, group=group, train=False)
-            platform.reset(discount_factor=args.gamma)
-            demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
-            print("Exploration Rate: ", 0)
+        # mask_exploration = max(mask_exploration * epsilon_decay_rate, epsilon_final)
+        # print("Exploration Rate (MASK): ", mask_exploration)
+        reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
+        worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value,
+                     speed=speed,
+                     capacity=capacity, group=group, train=True, mask_exploration=exploration_rate)
+        platform.reset(discount_factor=args.gamma)
+        demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
+
+        # if mask_phase:
+        #     mask_exploration = max(mask_exploration * epsilon_decay_rate, epsilon_final)
+        #     print("Exploration Rate (MASK): ", mask_exploration)
+        #
+        #     reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
+        #     worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value, speed=speed,
+        #                  capacity=capacity, group=group, train=False, mask_exploration = mask_exploration)
+        #     platform.reset(discount_factor=args.gamma)
+        #     demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
+        #
+        #     mask_rate = torch.sum(worker.mask).item() / args.worker_num
+        #     print("Mask Rate {:}".format(mask_rate))
+        #
+        #     pbar = tqdm.tqdm(range(args.max_step))
+        #     for t in pbar:
+        #         q_value, price_mu, price_sigma, order_state, worker_state = worker.observe(demand.current_demand, t,
+        #                                                                                    0)
+        #         assignment, _ = platform.assign(q_value)
+        #         feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, accepted_orders, worker_feed_back_table = platform.feedback(
+        #             worker.observe_space, worker.reservation_value, worker.speed, worker.current_orders,
+        #             worker.current_order_num,
+        #             assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment,
+        #             args.order_threshold, t,
+        #             Worker_Q_training, 0, args.worker_reject_punishment, device, worker_state
+        #         )
+        #         worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table,
+        #                       new_total_travel_time_table, worker_feed_back_table, t, (t == args.max_step - 1), j)
+        #         demand.pickup(accepted_orders)
+        #         demand.update()
+        #     worker.mask_append(j)
+        #     w_loss = worker.train_mask(batch_size=args.batch_size, train_times=args.train_times * 3)
+        # else:
+        if critic_phase:  # train critic
+            if current_critic_episode < critic_episode:
+                current_critic_episode += 1
+            if current_critic_episode == critic_episode:
+                current_critic_episode = 0
+                critic_phase = False
+
+            exploration_rate = max(exploration_rate * epsilon_decay_rate, epsilon_final)
+            exploration_rate_temp = exploration_rate
+            print("Exploration Rate: ", exploration_rate_temp)
+            worker.buffer = buffer
+
+            mask_rate = torch.sum(worker.mask).item() / args.worker_num
+            print("Mask Rate {:}".format(mask_rate))
+
             pbar = tqdm.tqdm(range(args.max_step))
             for t in pbar:
                 q_value, price_mu, price_sigma, order_state, worker_state = worker.observe(demand.current_demand, t,
-                                                                                           0)
+                                                                                           exploration_rate_temp)
                 assignment, _ = platform.assign(q_value)
                 feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, accepted_orders, worker_feed_back_table = platform.feedback(
                     worker.observe_space, worker.reservation_value, worker.speed, worker.current_orders,
                     worker.current_order_num,
                     assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment,
                     args.order_threshold, t,
-                    Worker_Q_training, 0, args.worker_reject_punishment, device, worker_state
+                    Worker_Q_training, exploration_rate_temp, args.worker_reject_punishment, device, worker_state
                 )
                 worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table,
                               new_total_travel_time_table, worker_feed_back_table, t, (t == args.max_step - 1), j)
                 demand.pickup(accepted_orders)
                 demand.update()
+
+                if (t+1)%4==0 and buffer.num > args.batch_size * 2:
+                    c_loss, a_loss = worker.train_critic(args.batch_size, 1, show_pbar = False)
+        else:  # train actor
+            # buffer.reset()
+            buffer_price.reset()
+            if current_actor_episode < actor_episode:
+                current_actor_episode += 1
+            if current_actor_episode == actor_episode:
+                critic_phase = True
+                current_actor_episode = 0
+            exploration_rate_temp = 0
+            # exploration_rate_temp = exploration_rate
+            # print("Exploration Rate: ", exploration_rate_temp)
+            print("Exploration Rate (MASK): ", exploration_rate)
+            worker.buffer = buffer_price
+
+            mask_rate = torch.sum(worker.mask).item() / args.worker_num
+            print("Mask Rate {:}".format(mask_rate))
+
+            pbar = tqdm.tqdm(range(args.max_step))
+            for t in pbar:
+                q_value, price_mu, price_sigma, order_state, worker_state = worker.observe(demand.current_demand, t,
+                                                                                           exploration_rate_temp)
+                assignment, _ = platform.assign(q_value)
+                feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, accepted_orders, worker_feed_back_table = platform.feedback(
+                    worker.observe_space, worker.reservation_value, worker.speed, worker.current_orders,
+                    worker.current_order_num,
+                    assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment,
+                    args.order_threshold, t,
+                    Worker_Q_training, exploration_rate_temp, args.worker_reject_punishment, device, worker_state
+                )
+                worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table,
+                              new_total_travel_time_table, worker_feed_back_table, t, (t == args.max_step - 1), j)
+                demand.pickup(accepted_orders)
+                demand.update()
+
+            c_loss, a_loss = worker.train_actor(j, args.batch_size, args.train_times, update_critic=args.simultaneity_train,lamada=args.lamada,kl_threshold=args.kl_threshold)
+            # buffer.reset()
+            buffer_price.reset()
+
+            buffer_mask.reset()
             worker.mask_append(j)
             w_loss = worker.train_mask(batch_size=args.batch_size, train_times=args.train_times * 3)
-        else:
-            reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
-            worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value, speed=speed,
-                         capacity=capacity, group=group, train=True)
-            platform.reset(discount_factor=args.gamma)
-            demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
-            if critic_phase:  # train critic
-                if current_critic_episode < critic_episode:
-                    current_critic_episode += 1
-                if current_critic_episode == critic_episode:
-                    current_critic_episode = 0
-                    critic_phase = False
-
-                exploration_rate = max(exploration_rate * epsilon_decay_rate, epsilon_final)
-                exploration_rate_temp = exploration_rate
-                print("Exploration Rate: ", exploration_rate_temp)
-                worker.buffer = buffer
-
-                pbar = tqdm.tqdm(range(args.max_step))
-                for t in pbar:
-                    q_value, price_mu, price_sigma, order_state, worker_state = worker.observe(demand.current_demand, t,
-                                                                                               exploration_rate_temp)
-                    assignment, _ = platform.assign(q_value)
-                    feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, accepted_orders, worker_feed_back_table = platform.feedback(
-                        worker.observe_space, worker.reservation_value, worker.speed, worker.current_orders,
-                        worker.current_order_num,
-                        assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment,
-                        args.order_threshold, t,
-                        Worker_Q_training, exploration_rate_temp, args.worker_reject_punishment, device, worker_state
-                    )
-                    worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table,
-                                  new_total_travel_time_table, worker_feed_back_table, t, (t == args.max_step - 1), j)
-                    demand.pickup(accepted_orders)
-                    demand.update()
-
-                    if (t+1)%4==0 and buffer.num > args.batch_size * 2:
-                        c_loss, a_loss = worker.train_critic(args.batch_size, 1, show_pbar = False)
-
-                # c_loss, a_loss = worker.train_critic(args.batch_size, train_times, show_pbar = True)
-            else:  # train actor
-                # buffer.reset()
-                buffer_price.reset()
-                if current_actor_episode < actor_episode:
-                    current_actor_episode += 1
-                if current_actor_episode == actor_episode:
-                    critic_phase = True
-                    current_actor_episode = 0
-                exploration_rate_temp = 0
-                # exploration_rate_temp = exploration_rate
-                print("Exploration Rate: ", exploration_rate_temp)
-                worker.buffer = buffer_price
-
-                train_times = args.train_times
-
-                pbar = tqdm.tqdm(range(args.max_step))
-                for t in pbar:
-                    q_value, price_mu, price_sigma, order_state, worker_state = worker.observe(demand.current_demand, t,
-                                                                                               exploration_rate_temp)
-                    assignment, _ = platform.assign(q_value)
-                    feedback_table, new_route_table, new_route_time_table, new_remaining_time_table, new_total_travel_time_table, accepted_orders, worker_feed_back_table = platform.feedback(
-                        worker.observe_space, worker.reservation_value, worker.speed, worker.current_orders,
-                        worker.current_order_num,
-                        assignment, order_state, price_mu, price_sigma, reward_func, args.reject_punishment,
-                        args.order_threshold, t,
-                        Worker_Q_training, exploration_rate_temp, args.worker_reject_punishment, device, worker_state
-                    )
-                    worker.update(feedback_table, new_route_table, new_route_time_table, new_remaining_time_table,
-                                  new_total_travel_time_table, worker_feed_back_table, t, (t == args.max_step - 1), j)
-                    demand.pickup(accepted_orders)
-                    demand.update()
-
-                c_loss, a_loss = worker.train_actor(j, args.batch_size, train_times, update_critic=args.simultaneity_train,lamada=args.lamada,kl_threshold=args.kl_threshold)
-                # buffer.reset()
-                buffer_price.reset()
+            buffer_mask.reset()
 
         total_pickup = platform.PickUp
         total_reward = platform.Total_Reward / args.worker_num
@@ -265,20 +287,24 @@ def main():
         print("Price Distribution Mu: Pos {:} , Neg {:}, Total {:}".format(price_mu_pos, price_mu_neg, price_mu_total))
         print("Price Distribution Std: Pos {:} , Neg {:}, Total {:}".format(price_sigma_pos, price_sigma_neg, price_sigma_total))
         print("Real Price Avg: Pos {:} , Neg {:}, Total {:}".format(price_pos, price_neg, price_total))
-
-        mask_rate = torch.sum(worker.mask).item() / args.worker_num
-        print("Mask Rate {:}".format(mask_rate))
         print()
 
         if j % args.eval_episode == 0:
             mask_phase = not mask_phase
             worker.buffer_mask.reset()
+            worker.buffer_q.reset()
+            worker.buffer_price.reset()
 
             reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
             worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value, speed=speed,
                          capacity=capacity, group=group, train=False)
             platform.reset(discount_factor=args.gamma)
             demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
+
+            print("Eval")
+            mask_rate = torch.sum(worker.mask).item() / args.worker_num
+            print("Mask Rate {:}".format(mask_rate))
+
             pbar = tqdm.tqdm(range(args.max_step))
             for t in pbar:
                 q_value, price_mu, price_sigma, order_state, worker_state = worker.observe(demand.current_demand, t,
@@ -325,9 +351,6 @@ def main():
             print("Price Distribution Std: Pos {:} , Neg {:}, Total {:}".format(price_sigma_pos, price_sigma_neg,
                                                                                 price_sigma_total))
             print("Real Price Avg: Pos {:} , Neg {:}, Total {:}".format(price_pos, price_neg, price_total))
-
-            mask_rate = torch.sum(worker.mask).item() / args.worker_num
-            print("Mask Rate {:}".format(mask_rate))
             print()
 
             dic = {
@@ -352,44 +375,28 @@ def main():
             with open('log.pkl', 'wb') as f:
                 pickle.dump(dic_list, f)
 
-            # rollback mechanism
-            if args.reward_threshold > 0:
-                if checkpoint[0] + actor_episode + critic_episode <= args.eval_episode and best_reward - total_reward >= args.reward_threshold:
-                    worker.load("platform_latest.pth", "price_latest.pth", device)
-                    print("\n Rollback \n")
-                    critic_episode += 1
-                    current_critic_episode, current_actor_episode, critic_phase, exploration_rate = checkpoint
-                else:
-                    worker.save("platform_latest.pth", "price_latest.pth", "mask_latest.pth")
-                    checkpoint = [current_critic_episode, current_actor_episode, critic_phase, exploration_rate]
 
-                    if total_reward > best_reward:
-                        best_epoch = 0
-                        best_reward = total_reward
-                        worker.save("platform_best.pth", "price_best.pth", "mask_best.pth")
-                    else:
-                        best_epoch += 1
-
-                    if j == args.minimum_episode:
-                        best_epoch = 0
-                    elif j > args.minimum_episode:
-                        print("Converge Step: ", best_epoch)
-                        if best_epoch >= args.converge_epoch:
-                            break
+            if total_reward > best_reward:
+                best_epoch = 0
+                best_reward = total_reward
+                worker.save("platform_best.pth", "price_best.pth", "mask_best.pth")
             else:
-                if total_reward > best_reward:
-                    best_epoch = 0
-                    best_reward = total_reward
-                    worker.save("platform_best.pth", "price_best.pth", "mask_best.pth")
-                else:
-                    best_epoch += 1
+                best_epoch += 1
 
-                if j == args.minimum_episode:
-                    best_epoch = 0
-                elif j > args.minimum_episode:
-                    print("Converge Step: ", best_epoch)
-                    if best_epoch >= args.converge_epoch:
-                        break
+            if worker_reward > best_reward_worker:
+                best_epoch_worker = 0
+                best_reward_worker = worker_reward
+                worker.save("platform_best.pth", "price_best.pth", "mask_best.pth")
+            else:
+                best_epoch_worker += 1
+
+            if j == args.minimum_episode:
+                best_epoch = 0
+                best_epoch_worker = 0
+            elif j > args.minimum_episode:
+                print("Converge Step: ", best_epoch,best_epoch_worker)
+                if best_epoch >= args.converge_epoch and best_epoch_worker >= args.converge_epoch:
+                    break
 
 
 if __name__ == '__main__':
