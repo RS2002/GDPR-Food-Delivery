@@ -240,7 +240,8 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
                 feedback = [[observe,current_order,current_order_num,new_orders_state[assignment], current_time], [price,price_log_prop,work_add,salary], reward, pickup_time[0]]
 
                 # worker_reward = work_add * (price-reservation_value)
-                worker_reward = work_add * (price / reservation_value)
+                # worker_reward = work_add * (price / reservation_value)
+                worker_reward = salary
 
                 worker_feedback = [1,worker_reward,price,work_add]
 

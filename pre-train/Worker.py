@@ -7,7 +7,8 @@ from joblib import Parallel, delayed
 import torch.nn as nn
 import tqdm
 import warnings
-
+import random
+from sklearn.cluster import KMeans
 
 # ignore FutureWarning
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -110,11 +111,13 @@ class Buffer_Mask():
         self.mask = []
         self.y = []
         self.episode = []
+        self.p = []
 
-    def append(self,x,mask,y,episode=0):
+    def append(self,x,mask,y,p,episode=0):
         self.x.extend(x.tolist())
         self.mask.extend(mask.tolist())
         self.y.extend(y.tolist())
+        self.p.extend(p.tolist())
         self.episode.extend([episode]*len(x))
         self.num = len(self.x)
 
@@ -122,6 +125,7 @@ class Buffer_Mask():
             self.x = self.x[-self.capacity:]
             self.mask = self.mask[-self.capacity:]
             self.y = self.y[-self.capacity:]
+            self.p = self.p[-self.capacity:]
             self.episode = self.episode[-self.capacity:]
             self.num = self.capacity
 
@@ -134,8 +138,9 @@ class Buffer_Mask():
         x = torch.tensor([self.x[i] for i in indices]).to(device)
         mask = torch.tensor([self.mask[i] for i in indices]).to(device)
         y = torch.tensor([self.y[i] for i in indices]).to(device)
+        p = torch.tensor([self.p[i] for i in indices]).to(device)
 
-        return x, mask, y
+        return x, mask, y, p
 
 
 
@@ -371,7 +376,7 @@ class Worker():
         self.Q_target = Q_Net(state_size=8, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=bilstm, dropout=dropout).to(device)
 
         self.Price_training = Price_Net(state_size=8, history_order_size=5, current_order_size=5, hidden_dim=64, head=1, bi_direction=bilstm, dropout=dropout).to(device)
-        self.Mask_Net = MLP([7,32,64,32,4], arl = True, dropout = dropout).to(device)
+        self.Mask_Net = MLP([7,32,64,32,3], arl = True, dropout = dropout).to(device)
 
         if self.intelligent_worker:
             self.Worker_Q_training = Worker_Q_Net(input_size=15, history_order_size=5, output_dim=2, bi_direction=bilstm, dropout=dropout).to(device)
@@ -412,7 +417,7 @@ class Worker():
 
         self.njobs = njobs
 
-    def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None, train=True, mask_exploration=0):
+    def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None, train=True):
         self.time = 0
 
         if train:
@@ -522,28 +527,152 @@ class Worker():
         self.worker_assign_order = [0]*self.num
         self.worker_reject_order = [0]*self.num
 
-        self.gen_mask(mask_exploration)
+        # self.gen_mask(PG_epsilon)
+        if train:
+            self.gen_mask_pretrain()
+        else:
+            self.gen_mask_eval(0.5)
 
-    def gen_mask(self,exploration_rate=0):
+        self.avg = None
+
+
+    def gen_mask_eval(self, mask_rate=0.5):
+        self.mask = (torch.rand([self.num]) < mask_rate).int().to(self.device)
+
+
+    def gen_mask_pretrain(self):
+
+        def worker_state_norm(x_state, lat_min=22.24370366972477, lat_max=22.505171559633027, lon_min=113.93901100917432,
+                 lon_max=114.26928623853212, max_seat=3):
+
+            lat_range = lat_max - lat_min
+            lon_range = lon_max - lon_min
+
+            if isinstance(x_state, torch.Tensor):
+                x_state = x_state.clone()
+            else:
+                x_state = x_state.copy()
+
+            x_state[:, 0] = (x_state[:, 0] - lat_min) / lat_range
+            x_state[:, 1] = (x_state[:, 1] - lon_min) / lon_range
+            x_state[:, 2] = x_state[:, 2] / max_seat
+            x_state[:, 4] = x_state[:, 4] / max_seat
+
+            return x_state
+
+        torch.set_grad_enabled(False)
+        rand = random.random()
+        group_num = random.randint(5, 30)
+        t = np.array([[0]] * self.num)
+
+        if rand < 0.15: # random mask
+            rand = np.random.rand(self.num)
+            mask_prob = random.random()
+            mask = (rand < mask_prob).astype(np.int32)
+        elif rand < 0.3: # random strike
+            rand = np.random.rand(self.num)
+            strike_prob = random.random()
+            mask = (rand < strike_prob).astype(np.int32)
+            mask *= 2
+        elif rand < 0.5: # random mask + strike
+            rand = np.random.rand(self.num)
+            mask_prob = random.random()
+            strike_prob = random.random()
+
+            mask_prob *= 0.5
+            strike_prob *= 0.5
+
+            mask = (rand < (mask_prob+strike_prob)).astype(np.int32)
+            mask[rand<strike_prob] = 2
+        else: # divide into groups first
+            if rand < 0.8:
+                if rand < 0.65: # cluster by Q-Net
+                    model = self.Q_training.worker_net.encode
+                else:  # cluster by Price-Net
+                    model = self.Price_training.worker_net.encode
+                worker_state = np.concatenate(
+                    [self.observe_space[:, :3], np.expand_dims(self.speed, axis=-1), np.expand_dims(self.capacity, axis=-1),
+                     np.expand_dims(self.positive_history, axis=-1), np.expand_dims(self.negative_history, axis=-1), t], axis=-1)
+                x = worker_state_norm(worker_state)
+                x = torch.from_numpy(x).float().to(self.device)
+                y = model(x)
+                y = y.detach().cpu().numpy()
+                kmeans = KMeans(n_clusters=group_num)
+                kmeans.fit(y)
+                labels = kmeans.labels_
+            else: # cluster by reservation value
+                sorted_data = np.sort(self.reservation_value)
+                cut_points = np.random.choice(np.arange(1, self.num), group_num - 1, replace=False)
+                cut_points.sort()
+                labels = np.zeros(self.num, dtype=int)
+                for i in range(group_num - 1):
+                    labels[self.reservation_value >= sorted_data[cut_points[i]]] = i + 1
+
+            rand = random.random()
+            if rand < 0.3: # only mask
+                scale_rate = random.random() * 2
+                group_mask_prob = np.random.rand(group_num)
+                mask_prob = group_mask_prob[labels] * scale_rate
+                rand = np.random.rand(self.num)
+                mask = (rand < mask_prob).astype(np.int32)
+            elif rand < 0.6: # only strike
+                scale_rate = random.random()
+                group_mask_prob = np.random.rand(group_num)
+                strike_prob = group_mask_prob[labels] * scale_rate
+                rand = np.random.rand(self.num)
+                mask = (rand < strike_prob).astype(np.int32)
+                mask *= 2
+            else: # mask + strike
+                scale_rate1 = random.random() * 2
+                group_mask_prob = np.random.rand(group_num)
+                mask_prob = group_mask_prob[labels] * scale_rate1
+
+                scale_rate2 = random.random()
+                group_mask_prob = np.random.rand(group_num)
+                strike_prob = group_mask_prob[labels] * scale_rate2
+
+                mask_prob *= 0.5
+                strike_prob *= 0.5
+
+                rand = np.random.rand(self.num)
+                mask = (rand < (mask_prob + strike_prob)).astype(np.int32)
+                mask[rand < strike_prob] = 2
+
+        self.mask = torch.from_numpy(mask).to(self.device)
+
+
+    def gen_mask(self, epsilon = 0.0):
         torch.set_grad_enabled(False)
         x = np.concatenate([self.observe_space[:,:2], np.expand_dims(self.speed, axis=-1), np.expand_dims(self.capacity, axis=-1), np.expand_dims(self.reservation_value, axis=-1), np.expand_dims(self.positive_history, axis=-1), np.expand_dims(self.negative_history, axis=-1)],axis=-1)
         x = norm_mask(x)
         x = torch.from_numpy(x).float().to(self.device)
-        mask = self.Mask_Net(x)
-        mask = mask[:,:2]
-        mask = torch.softmax(mask,dim=-1)[:,0]
-        rand = torch.rand_like(mask)
-        self.mask = (mask>=rand).int()
-        rand = torch.randint(0, 2, self.mask.shape,dtype=torch.int).to(self.device)
-        exploration_matrix = torch.rand_like(self.mask,dtype=torch.float)
-        self.mask[exploration_matrix<exploration_rate] = rand[exploration_matrix<exploration_rate]
+        y = self.Mask_Net(x)
+        y = torch.softmax(y,dim=-1)
 
-    def mask_append(self,episode=0):
+        rand = torch.rand([self.num]).to(self.device)
+        self.mask = torch.zeros([self.num],dtype=torch.int).to(self.device) + 2
+        self.mask[rand<= 1 - y[:,2]] = 1
+        self.mask[rand<=y[:,0]] = 0
+
+        rand = torch.rand([self.num]).to(self.device)
+        rand_choose = torch.randint(0, 3, (self.num,),dtype=torch.int).to(self.device)
+        self.mask[rand<epsilon] = rand_choose[rand<epsilon]
+        self.mask = self.mask.detach()
+
+        self.mask_rate = y[:,1]
+        self.strike_rate = y[:,2]
+
+        # self.p = y[torch.arange(y.shape[0]),self.mask]
+        self.p = y
+
+    def mask_append(self, lowest_utility=35, episode=0):
         x = np.concatenate([self.observe_space[:,:2], np.expand_dims(self.speed, axis=-1), np.expand_dims(self.capacity, axis=-1), np.expand_dims(self.reservation_value, axis=-1), np.expand_dims(self.positive_history, axis=-1), np.expand_dims(self.negative_history, axis=-1)],axis=-1)
         x = norm_mask(x)
+        p = self.p
+        mask = self.mask.cpu().numpy()
         y = self.worker_reward
-        mask = self.mask
-        self.buffer_mask.append(x,mask,y,episode)
+        y[mask==2] = lowest_utility
+        self.buffer_mask.append(x,mask,y,p,episode)
 
 
     def observe(self, order, current_time, exploration_rate=0):
@@ -565,6 +694,8 @@ class Worker():
         q_value[exploration_matrix<exploration_rate] = INF
         # 4. delete the Q value of not available workers
         q_value[self.observe_space[:,3]!=0] = -INF
+        # 5. delete striking workers
+        q_value[self.mask==2] = -INF
         return q_value.cpu().detach().numpy(), price_mu.cpu().detach().numpy(), price_sigma.cpu().detach().numpy(), order_state, worker_state
 
     def update(self, feedback_table, new_route_table ,new_route_time_table ,new_remaining_time_table ,new_total_travel_time_table, worker_feed_back_table, current_time, final_step=False, episode=1):
@@ -642,7 +773,6 @@ class Worker():
 
 
     def train_actor(self,episode,batch_size=512,train_times=10,update_critic=False,lamada=0.9,kl_threshold=0.05):
-
         c_loss=[]
         a_loss=[]
 
@@ -867,29 +997,58 @@ class Worker():
         return np.mean(c_loss), np.mean(a_loss)
 
 
-    def train_mask(self, batch_size=512, train_times=30):
+    def train_mask(self, batch_size=512, train_times=10,kl_threshold=0.05):
         pbar = tqdm.tqdm(range(train_times))
         torch.set_grad_enabled(True)
         self.Mask_Net.train()
         loss_list = []
+        # params = {k: v.clone() for k, v in self.Mask_Net.state_dict().items()}
 
         for _ in pbar:
-            x,mask,y = self.buffer_mask.sampling(batch_size,self.device)
-            x, mask, y = x.float(), mask.int(), y.float()
-            y_hat = self.Mask_Net(x)
-            y_hat_mu = y_hat[:,:2]
-            y_hat_sigma = y_hat[:,2:]
-            softplus = nn.Softplus()
-            y_hat_sigma = softplus(y_hat_sigma)
+            x, mask, r, p = self.buffer_mask.sampling(batch_size,self.device)
+            x, mask, r, p = x.float(), mask.int(), r.float(), p.float()
+            y = self.Mask_Net(x)
+            y = torch.softmax(y, dim=-1)
 
-            y_hat_mu = y_hat_mu[torch.arange(y_hat.shape[0]),mask]
-            y_hat_sigma = y_hat_sigma[torch.arange(y_hat.shape[0]),mask]
+            entropy = -torch.sum(y * torch.log(y + 1e-10), dim=1)
+            # kl_div = 0.5 * torch.sum(y * (torch.log(y + 1e-8) - torch.log(p + 1e-8)), dim=1) + 0.5 * torch.sum(p * (torch.log(p + 1e-8) - torch.log(y + 1e-8)), dim=1)
 
-            mse = self.loss_func(y_hat_mu,y)
-            gaussion = loss_gaussion(y, y_hat_mu, y_hat_sigma)
-            # mape = loss_mape(y_hat_mu, y)
-            # loss = gaussion + mape * 0.01 + mse
-            loss = gaussion
+            y = y[torch.arange(y.shape[0]),mask]
+
+            # p_old = p[torch.arange(y.shape[0]),mask]
+            # ratio = y / (p_old+0.01)
+            # ratio = ratio.detach()
+            # y = y * (ratio >= 1-self.eps_clip).float() * (ratio <= 1+self.eps_clip)
+
+            # p_old = p[torch.arange(y.shape[0]),mask]
+            # ratio = y / p_old
+            # # ratio = torch.clamp(ratio, 1-self.eps_clip, 1+self.eps_clip)
+            # ratio = ratio.detach()
+            # y = y * (ratio >= 1-self.eps_clip).float() * (ratio >= 1-self.eps_clip)
+
+
+            # if kl_div > kl_threshold:
+            #     self.Mask_Net.load_state_dict(params)
+            #     print("Big KL Divergence: ", kl_div)
+            #     break
+            # else:
+            #     params = {k: v.clone() for k, v in self.Mask_Net.state_dict().items()}
+
+            loss = - y * r
+            # loss = - ratio * r
+            # loss = loss - 0.1 * entropy + 0.1 * kl_div
+            loss = loss - 0.1 * entropy
+
+            weight_class = torch.ones([3]).to(self.device)
+            for j in range(3):
+                weight_class[j] += torch.sum((mask==j).float())
+            weight_class = 1 / weight_class
+            weight = weight_class[mask]
+            weight = weight * batch_size / 3
+            loss = loss * weight
+
+            # print(loss.shape)
+            loss = torch.mean(loss)
 
             self.optim_mask.zero_grad()
             loss.backward()
@@ -904,7 +1063,7 @@ class Worker():
                 # print("NAN Gradient->Skip")
                 continue
             self.optim_mask.step()
-            loss_list.append(mse.item())
+            loss_list.append(loss.item())
 
         # self.schedule_mask.step()
         return np.mean(loss_list)

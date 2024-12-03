@@ -20,7 +20,7 @@ def get_args():
     parser.add_argument('--minimum_episode', type=int, default=700)
     parser.add_argument('--worker_num', type=int, default=1000)
     parser.add_argument('--buffer_capacity', type=int, default=30000)
-    parser.add_argument('--demand_sample_rate', type=float, default=0.6)
+    parser.add_argument('--demand_sample_rate', type=float, default=0.2)
     parser.add_argument('--order_max_wait_time', type=float, default=5.0)
     parser.add_argument('--order_threshold', type=float, default=40.0)
     parser.add_argument('--reward_parameter', type=float, nargs='+', default=[3.0,5.0,4.0,3.0,1.0,5.0,0.0])
@@ -32,10 +32,10 @@ def get_args():
 
     parser.add_argument("--simultaneity_train", action="store_true",default=False)
     parser.add_argument('--lamada', type=float, default=0.9)
-    parser.add_argument('--kl_threshold', type=float, default=0.05)
+    parser.add_argument('--kl_threshold', type=float, default=0.1)
 
     parser.add_argument('--eval_episode', type=int, default=10)
-    parser.add_argument('--critic_episode', type=int, default=2)
+    parser.add_argument('--critic_episode', type=int, default=3)
     parser.add_argument('--actor_episode', type=int, default=1)
 
     parser.add_argument('--epsilon', type=float, default=1.0)
@@ -124,29 +124,24 @@ def main():
 
     j = args.init_episode
     exploration_rate = max(exploration_rate * (epsilon_decay_rate**j), epsilon_final)
-    mask_exploration = exploration_rate
 
     critic_episode = args.critic_episode
     current_critic_episode = 0
     actor_episode = args.actor_episode
     current_actor_episode = 0
 
-    critic_phase = False
-
-    mask_phase = False
+    critic_phase = True
+    # mask_phase = False
 
 
     while True:
         j += 1
 
         c_loss, a_loss, w_loss = 0, 0, 0
-
-        # mask_exploration = max(mask_exploration * epsilon_decay_rate, epsilon_final)
-        # print("Exploration Rate (MASK): ", mask_exploration)
         reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
         worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value,
                      speed=speed,
-                     capacity=capacity, group=group, train=True, mask_exploration=exploration_rate)
+                     capacity=capacity, group=group, train=True)
         platform.reset(discount_factor=args.gamma)
         demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
 
@@ -194,8 +189,9 @@ def main():
             print("Exploration Rate: ", exploration_rate_temp)
             worker.buffer = buffer
 
-            mask_rate = torch.sum(worker.mask).item() / args.worker_num
-            print("Mask Rate {:}".format(mask_rate))
+            mask_rate = torch.sum((worker.mask==1).float()).item() / args.worker_num
+            strike_rate = torch.sum((worker.mask==2).float()).item() / args.worker_num
+            print("Mask Rate {:}, Strike Rate {:}".format(mask_rate,strike_rate))
 
             pbar = tqdm.tqdm(range(args.max_step))
             for t in pbar:
@@ -217,7 +213,9 @@ def main():
                 if (t+1)%4==0 and buffer.num > args.batch_size * 2:
                     c_loss, a_loss = worker.train_critic(args.batch_size, 1, show_pbar = False)
         else:  # train actor
+
             # buffer.reset()
+
             buffer_price.reset()
             if current_actor_episode < actor_episode:
                 current_actor_episode += 1
@@ -225,13 +223,12 @@ def main():
                 critic_phase = True
                 current_actor_episode = 0
             exploration_rate_temp = 0
-            # exploration_rate_temp = exploration_rate
-            # print("Exploration Rate: ", exploration_rate_temp)
-            print("Exploration Rate (MASK): ", exploration_rate)
+            print("Exploration Rate: ", exploration_rate_temp)
             worker.buffer = buffer_price
 
-            mask_rate = torch.sum(worker.mask).item() / args.worker_num
-            print("Mask Rate {:}".format(mask_rate))
+            mask_rate = torch.sum((worker.mask==1).float()).item() / args.worker_num
+            strike_rate = torch.sum((worker.mask==2).float()).item() / args.worker_num
+            print("Mask Rate {:}, Strike Rate {:}".format(mask_rate,strike_rate))
 
             pbar = tqdm.tqdm(range(args.max_step))
             for t in pbar:
@@ -254,10 +251,10 @@ def main():
             # buffer.reset()
             buffer_price.reset()
 
-            buffer_mask.reset()
-            worker.mask_append(j)
-            w_loss = worker.train_mask(batch_size=args.batch_size, train_times=args.train_times * 3)
-            buffer_mask.reset()
+            # buffer_mask.reset()
+            # worker.mask_append(lowest_utility=args.lowest_utility, episode=j)
+            # w_loss = worker.train_mask(batch_size=args.batch_size//2, train_times=args.train_times,kl_threshold=args.kl_threshold)
+            # buffer_mask.reset()
 
         total_pickup = platform.PickUp
         total_reward = platform.Total_Reward / args.worker_num
@@ -268,8 +265,8 @@ def main():
         average_detour = np.mean(np.array(platform.workload) - np.array(platform.direct_time))
         total_valid_distance = np.sum(platform.valid_distance)
 
-        log = "Train Episode {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:} , Critic Loss {:} , Actor Loss {:}, Worker Loss {:}".format(
-            j, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time, total_timeout, total_valid_distance, c_loss, a_loss, w_loss)
+        log = "Train Episode {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:} , Critic Loss {:} , Actor Loss {:} , Worker Loss {:} , Mask Rate {:} , Strike Rate {:}".format(
+            j, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time, total_timeout, total_valid_distance, c_loss, a_loss, w_loss, mask_rate, strike_rate)
         print(log)
         with open("train.txt", 'a') as file:
             file.write(log+"\n")
@@ -290,10 +287,14 @@ def main():
         print()
 
         if j % args.eval_episode == 0:
-            mask_phase = not mask_phase
-            worker.buffer_mask.reset()
-            worker.buffer_q.reset()
-            worker.buffer_price.reset()
+            # mask_phase = not mask_phase
+            # worker.buffer_mask.reset()
+            # worker.buffer_q.reset()
+            # worker.buffer_price.reset()
+
+            worker.schedule.step()
+            worker.schedule_price.step()
+            worker.schedule_mask.step()
 
             reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
             worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value, speed=speed,
@@ -302,8 +303,9 @@ def main():
             demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
 
             print("Eval")
-            mask_rate = torch.sum(worker.mask).item() / args.worker_num
-            print("Mask Rate {:}".format(mask_rate))
+            mask_rate = torch.sum((worker.mask==1).float()).item() / args.worker_num
+            strike_rate = torch.sum((worker.mask==2).float()).item() / args.worker_num
+            print("Mask Rate {:}, Strike Rate {:}".format(mask_rate,strike_rate))
 
             pbar = tqdm.tqdm(range(args.max_step))
             for t in pbar:
@@ -330,8 +332,8 @@ def main():
             average_detour = np.mean(np.array(platform.workload) - np.array(platform.direct_time))
             total_valid_distance = np.sum(platform.valid_distance)
 
-            log = "Eval Episode {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:}".format(
-                j, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time, total_timeout, total_valid_distance
+            log = "Eval Episode {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:}, Mask Rate {:} , Strike Rate {:}".format(
+                j, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time, total_timeout, total_valid_distance, mask_rate, strike_rate
             )
             print(log)
             with open("eval.txt", 'a') as file:
@@ -383,19 +385,12 @@ def main():
             else:
                 best_epoch += 1
 
-            if worker_reward > best_reward_worker:
-                best_epoch_worker = 0
-                best_reward_worker = worker_reward
-                worker.save("platform_best.pth", "price_best.pth", "mask_best.pth")
-            else:
-                best_epoch_worker += 1
-
             if j == args.minimum_episode:
                 best_epoch = 0
                 best_epoch_worker = 0
             elif j > args.minimum_episode:
                 print("Converge Step: ", best_epoch,best_epoch_worker)
-                if best_epoch >= args.converge_epoch and best_epoch_worker >= args.converge_epoch:
+                if best_epoch >= args.converge_epoch:
                     break
 
 

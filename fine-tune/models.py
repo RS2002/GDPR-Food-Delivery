@@ -144,6 +144,8 @@ class Q_Net(nn.Module):
         order = self.order_net(order)
         worker = self.worker_net(x_state,x_order,order_num)
         if mask is not None:
+            mask = mask.clone()
+            mask[mask>1]=1
             x_state = torch.concat([x_state[...,:-5],x_state[...,-1:]],dim=-1) # drop the history price
             x_order = x_order[...,:-1] # drop the order price
             worker_mask = self.mask_net(x_state,x_order,order_num)
@@ -176,6 +178,8 @@ class Price_Net(nn.Module):
         worker = self.worker_net(x_state,x_order,order_num)
 
         if mask is not None:
+            mask = mask.clone()
+            mask[mask>1]=1
             x_state = torch.concat([x_state[...,:-5],x_state[...,-1:]],dim=-1) # drop the history price
             x_order = x_order[...,:-1] # drop the order price
             worker_mask = self.mask_net(x_state,x_order,order_num)
