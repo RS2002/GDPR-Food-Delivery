@@ -6,6 +6,7 @@ import tqdm
 import torch
 import numpy as np
 import pickle
+import random
 
 def get_args():
     parser = argparse.ArgumentParser(description='')
@@ -20,7 +21,10 @@ def get_args():
     parser.add_argument('--minimum_episode', type=int, default=700)
     parser.add_argument('--worker_num', type=int, default=1000)
     parser.add_argument('--buffer_capacity', type=int, default=30000)
+
     parser.add_argument('--demand_sample_rate', type=float, default=0.2)
+    parser.add_argument("--rand_sample_rate", action="store_true",default=False)
+
     parser.add_argument('--order_max_wait_time', type=float, default=5.0)
     parser.add_argument('--order_threshold', type=float, default=40.0)
     parser.add_argument('--reward_parameter', type=float, nargs='+', default=[3.0,5.0,4.0,3.0,1.0,5.0,0.0])
@@ -117,7 +121,6 @@ def main():
     best_reward = -1e-8
     best_epoch = 0
 
-    best_reward_worker = -1e-8
     best_epoch_worker = 0
 
     dic_list = []
@@ -143,7 +146,14 @@ def main():
                      speed=speed,
                      capacity=capacity, group=group, train=True)
         platform.reset(discount_factor=args.gamma)
-        demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
+
+        if args.rand_sample_rate:
+            demand_sample_rate = random.uniform(0.1, 0.9)
+        else:
+            demand_sample_rate = args.demand_sample_rate
+
+
+        demand.reset(episode_time=0, p_sample=demand_sample_rate, wait_time=args.order_max_wait_time)
 
         # if mask_phase:
         #     mask_exploration = max(mask_exploration * epsilon_decay_rate, epsilon_final)
