@@ -17,7 +17,7 @@ def get_args():
     parser.add_argument('--gamma', type=float, default=0.9)
     parser.add_argument('--eps_clip', type=float, default=0.1)
     parser.add_argument('--max_step', type=int, default=60)
-    parser.add_argument('--converge_epoch', type=int, default=10)
+    parser.add_argument('--converge_epoch', type=int, default=0)
     parser.add_argument('--minimum_episode', type=int, default=1000)
     parser.add_argument('--worker_num', type=int, default=1000)
     parser.add_argument('--buffer_capacity', type=int, default=30000)
@@ -39,7 +39,7 @@ def get_args():
     parser.add_argument('--kl_threshold', type=float, default=0.1)
 
     parser.add_argument('--eval_episode', type=int, default=10)
-    parser.add_argument('--critic_episode', type=int, default=3)
+    parser.add_argument('--critic_episode', type=int, default=4)
     parser.add_argument('--actor_episode', type=int, default=1)
 
     parser.add_argument('--epsilon', type=float, default=1.0)

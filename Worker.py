@@ -80,6 +80,10 @@ def norm(order, x_state, x_order, lat_min=22.24370366972477, lat_max=22.50517155
     x_state[:, 2] = x_state[:, 2] / max_seat  # max seat: 3
     x_state[:, 4] = x_state[:, 4] / max_seat  # max seat: 3
 
+    # 4. reservation_value
+    x_state[:,5] = (x_state[:,5] - 0.85) / 0.3
+    x_state[:,6] = (x_state[:,6] - 0.85) / 0.3
+
     return order, x_state, x_order
 
 
@@ -98,6 +102,9 @@ def worker_state_norm(x_state, lat_min=22.24370366972477, lat_max=22.50517155963
     x_state[:, 2] = x_state[:, 2] / max_seat
     x_state[:, 4] = x_state[:, 4] / max_seat
 
+    x_state[:,5] = (x_state[:,5] - 0.85) / 0.3
+    x_state[:,6] = (x_state[:,6] - 0.85) / 0.3
+
     return x_state
 
 def private_norm(x_state, lat_min=22.24370366972477, lat_max=22.505171559633027, lon_min=113.93901100917432,
@@ -114,6 +121,7 @@ def private_norm(x_state, lat_min=22.24370366972477, lat_max=22.505171559633027,
     x_state[:, 1] = (x_state[:, 1] - lon_min) / lon_range
     x_state[:, 3] = x_state[:, 3] / max_seat
 
+    x_state[:,4] = (x_state[:,4] - 0.85) / 0.3
     return x_state
 
 
@@ -436,8 +444,8 @@ class Worker():
 
         self.update_Qtarget(tau=1.0)
 
-        # self.loss_func = nn.MSELoss(reduction="none")
-        self.loss_func = nn.MSELoss()
+        self.loss_func = nn.MSELoss(reduction="none")
+        # self.loss_func = nn.MSELoss()
 
         # self.optim = torch.optim.Adam(self.Q_training.parameters(), lr=lr, weight_decay=0.01)
         self.optim = torch.optim.Adam(self.Q_training.parameters(), lr=lr, weight_decay=0.0)
@@ -608,6 +616,7 @@ class Worker():
         x = self.x
         x2 = self.x2
         mask = self.mask.cpu().numpy()
+        # y = self.worker_reward.copy()
         y = self.worker_reward
         y[mask == 2] = lowest_utility
         self.lowest_utility = lowest_utility
@@ -623,16 +632,16 @@ class Worker():
         group_num = random.randint(5, 30)
         t = np.array([[0]] * self.num)
 
-        if rand < 0.15:  # random mask
+        if rand < 0.1:  # random mask
             rand = np.random.rand(self.num)
             mask_prob = random.random()
             mask = (rand < mask_prob).astype(np.int32)
-        elif rand < 0.3:  # random strike
+        elif rand < 0.2:  # random strike
             rand = np.random.rand(self.num)
             strike_prob = random.random()
             mask = (rand < strike_prob).astype(np.int32)
             mask *= 2
-        elif rand < 0.5:  # random mask + strike
+        elif rand < 0.3:  # random mask + strike
             rand = np.random.rand(self.num)
             mask_prob = random.random()
             strike_prob = random.random()
@@ -643,7 +652,7 @@ class Worker():
             mask = (rand < (mask_prob + strike_prob)).astype(np.int32)
             mask[rand < strike_prob] = 2
         else:  # divide into groups first
-            if rand < 0.8:
+            if rand < 0.6:
                 model = self.Q_training.worker_encode
                 worker_state = np.concatenate(
                     [self.observe_space[:, :3], np.expand_dims(self.speed, axis=-1),
@@ -666,34 +675,86 @@ class Worker():
                     labels[self.reservation_value >= sorted_data[cut_points[i]]] = i + 1
 
             rand = random.random()
-            if rand < 0.3:  # only mask
-                scale_rate = random.random() * 2
-                group_mask_prob = np.random.rand(group_num)
-                mask_prob = group_mask_prob[labels] * scale_rate
-                rand = np.random.rand(self.num)
-                mask = (rand < mask_prob).astype(np.int32)
-            elif rand < 0.6:  # only strike
-                scale_rate = random.random()
-                group_mask_prob = np.random.rand(group_num)
-                strike_prob = group_mask_prob[labels] * scale_rate
-                rand = np.random.rand(self.num)
-                mask = (rand < strike_prob).astype(np.int32)
-                mask *= 2
-            else:  # mask + strike
-                scale_rate1 = random.random() * 2
-                group_mask_prob = np.random.rand(group_num)
-                mask_prob = group_mask_prob[labels] * scale_rate1
+            if rand < 0.5: # random label
+                rand = random.random()
+                if rand < 0.3:  # only mask
+                    scale_rate = random.random() * 2
+                    group_mask_prob = np.random.rand(group_num)
+                    mask_prob = group_mask_prob[labels] * scale_rate
+                    rand = np.random.rand(self.num)
+                    mask = (rand < mask_prob).astype(np.int32)
+                elif rand < 0.6:  # only strike
+                    scale_rate = random.random()
+                    group_mask_prob = np.random.rand(group_num)
+                    strike_prob = group_mask_prob[labels] * scale_rate
+                    rand = np.random.rand(self.num)
+                    mask = (rand < strike_prob).astype(np.int32)
+                    mask *= 2
+                else:  # mask + strike
+                    scale_rate1 = random.random() * 2
+                    group_mask_prob = np.random.rand(group_num)
+                    mask_prob = group_mask_prob[labels] * scale_rate1
 
-                scale_rate2 = random.random()
-                group_mask_prob = np.random.rand(group_num)
-                strike_prob = group_mask_prob[labels] * scale_rate2
+                    scale_rate2 = random.random()
+                    group_mask_prob = np.random.rand(group_num)
+                    strike_prob = group_mask_prob[labels] * scale_rate2
 
-                mask_prob *= 0.5
-                strike_prob *= 0.5
+                    mask_prob *= 0.5
+                    strike_prob *= 0.5
 
-                rand = np.random.rand(self.num)
-                mask = (rand < (mask_prob + strike_prob)).astype(np.int32)
-                mask[rand < strike_prob] = 2
+                    rand = np.random.rand(self.num)
+                    mask = (rand < (mask_prob + strike_prob)).astype(np.int32)
+                    mask[rand < strike_prob] = 2
+            else: # monotonous label
+                rand = random.random()
+                if rand < 0.3:  # only mask
+                    scale_rate = random.random() * 2
+                    group_mask_prob = np.random.rand(group_num)
+
+                    group_mask_prob = np.sort(group_mask_prob)
+                    if random.random() < 0.5:
+                        group_mask_prob = group_mask_prob[::-1]
+
+                    mask_prob = group_mask_prob[labels] * scale_rate
+                    rand = np.random.rand(self.num)
+                    mask = (rand < mask_prob).astype(np.int32)
+                elif rand < 0.6:  # only strike
+                    scale_rate = random.random()
+                    group_mask_prob = np.random.rand(group_num)
+
+                    group_mask_prob = np.sort(group_mask_prob)
+                    if random.random() < 0.5:
+                        group_mask_prob = group_mask_prob[::-1]
+
+                    strike_prob = group_mask_prob[labels] * scale_rate
+                    rand = np.random.rand(self.num)
+                    mask = (rand < strike_prob).astype(np.int32)
+                    mask *= 2
+                else:  # mask + strike
+                    scale_rate1 = random.random() * 2
+                    group_mask_prob = np.random.rand(group_num)
+
+                    group_mask_prob = np.sort(group_mask_prob)
+                    if random.random() < 0.5:
+                        group_mask_prob = group_mask_prob[::-1]
+
+                    mask_prob = group_mask_prob[labels] * scale_rate1
+
+                    scale_rate2 = random.random()
+                    group_mask_prob = np.random.rand(group_num)
+
+                    group_mask_prob = np.sort(group_mask_prob)
+                    if random.random() < 0.5:
+                        group_mask_prob = group_mask_prob[::-1]
+
+                    strike_prob = group_mask_prob[labels] * scale_rate2
+
+                    mask_prob *= 0.5
+                    strike_prob *= 0.5
+
+                    rand = np.random.rand(self.num)
+                    mask = (rand < (mask_prob + strike_prob)).astype(np.int32)
+                    mask[rand < strike_prob] = 2
 
         self.mask = torch.from_numpy(mask).to(self.device)
 
@@ -913,14 +974,14 @@ class Worker():
                 td_target_temp = td_target_temp.float()
                 critic_loss = self.loss_func(current_state_value, td_target_temp.detach())
 
-                # weight_class = torch.ones([2]).to(self.device)
-                # for j in range(2):
-                #     weight_class[j] += torch.sum((mask_temp == j).float())
-                # weight_class = 1 / weight_class
-                # weight = weight_class[mask_temp]
-                # weight = weight * batch_size / 2
-                # critic_loss = critic_loss * weight
-                # critic_loss = torch.mean(critic_loss)
+                weight_class = torch.ones([2]).to(self.device)
+                for j in range(2):
+                    weight_class[j] += torch.sum((mask_temp == j).float())
+                weight_class = 1 / weight_class
+                weight = weight_class[mask_temp]
+                weight = weight * batch_size / 2
+                critic_loss = critic_loss * weight
+                critic_loss = torch.mean(critic_loss)
 
                 normal_dist = torch.distributions.Normal(price_mu, price_sigma)
                 price_log_prob = normal_dist.log_prob(price_old_temp)
@@ -929,11 +990,11 @@ class Worker():
                 surr1 = ratio * advantage_temp.detach()
                 surr2 = torch.clamp(ratio, 1 - self.eps_clip, 1 + self.eps_clip) * advantage_temp.detach()
 
-                actor_loss = torch.mean(-torch.min(surr1, surr2))
+                # actor_loss = torch.mean(-torch.min(surr1, surr2))
 
-                # actor_loss = -torch.min(surr1, surr2)
-                # actor_loss = actor_loss * weight
-                # actor_loss = torch.mean(actor_loss)
+                actor_loss = -torch.min(surr1, surr2)
+                actor_loss = actor_loss * weight
+                actor_loss = torch.mean(actor_loss)
 
                 loss1 = actor_loss + rate_entro * entropy_loss + rate_kl * kl_loss
                 loss2 = critic_loss
@@ -1000,17 +1061,17 @@ class Worker():
             td_target = td_target.float()
 
             critic_loss = self.loss_func(current_state_value, td_target.detach())
-            loss = critic_loss
-
-            # weight_class = torch.ones([2]).to(self.device)
-            # for j in range(2):
-            #     weight_class[j] += torch.sum((mask==j).float())
-            # weight_class = 1 / weight_class
-            # weight = weight_class[mask]
-            # weight = weight * batch_size / 2
-            # critic_loss = critic_loss * weight
-            # critic_loss = torch.mean(critic_loss)
             # loss = critic_loss
+
+            weight_class = torch.ones([2]).to(self.device)
+            for j in range(2):
+                weight_class[j] += torch.sum((mask==j).float())
+            weight_class = 1 / weight_class
+            weight = weight_class[mask]
+            weight = weight * batch_size / 2
+            critic_loss = critic_loss * weight
+            critic_loss = torch.mean(critic_loss)
+            loss = critic_loss
 
             self.optim.zero_grad()
             loss.backward()

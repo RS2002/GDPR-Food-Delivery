@@ -217,9 +217,12 @@ class Assignment_Net(nn.Module):
         self.attention_price_sigma = Attention_Score(input_dims=hidden_dim, hidden_dims=hidden_dim, head=head, dropout=dropout)
         self.sigmoid = nn.Sigmoid()
         # Estimated Earning
-        self.predictor = MLP([hidden_dim * 2, hidden_dim, hidden_dim, 6])
-        # self.predictor2 = MLP([hidden_dim, hidden_dim, hidden_dim, 6])
-        self.private_encoder = MLP([state_size-3,hidden_dim,hidden_dim],arl=True,dropout=dropout)
+        self.predictor = MLP([hidden_dim, hidden_dim, hidden_dim, 6])
+
+        self.multi_lora = nn.ModuleList()
+        for i in range(10):
+            self.multi_lora.append(MLP([state_size-3,4,hidden_dim],arl=True,dropout=dropout))
+
         self.softplus = nn.Softplus()
 
     def encode(self,order,x_state,x_order,order_num=None,mask=None):
@@ -277,14 +280,36 @@ class Assignment_Net(nn.Module):
     #
     #     return earning
 
+    # def estimate_earning(self,x_state,x_private):
+    #
+    #     x_state = x_state.float()
+    #     worker = self.worker_net.encode(x_state)
+    #     worker = worker.detach()
+    #
+    #     x_private = self.private_encoder(x_private)
+    #     worker_emb = torch.concat([worker,x_private],dim=-1)
+    #
+    #     earning = self.predictor(worker_emb)
+    #
+    #     earning = self.softplus(earning)
+    #     earning = earning.reshape([-1,3,2])
+    #
+    #     return earning
+
     def estimate_earning(self,x_state,x_private):
 
         x_state = x_state.float()
-        worker = self.worker_net.encode(x_state)
+        worker = self.worker_encode(x_state)
         worker = worker.detach()
 
-        x_private = self.private_encoder(x_private)
-        worker_emb = torch.concat([worker,x_private],dim=-1)
+        group_id = (x_private[-1] - 0.85) // 0.03
+        if group_id < 0:
+            group_id = 0
+        elif group_id > 9:
+            group_id = 9
+        private_encoder = self.multi_lora[group_id]
+        x_private = private_encoder(x_private)
+        worker_emb = worker + x_private
 
         earning = self.predictor(worker_emb)
 
@@ -343,57 +368,3 @@ class Worker_Q_Net(nn.Module):
         x = x.float()
         y = self.worker_net(x,x_order,order_num) # [reject_prob,accept_prob]
         return y
-
-
-# test
-if __name__ == '__main__':
-    # model = LSTM(10,1,64)
-    # x = torch.randn([4,50,10])
-    # index = torch.tensor([5,3,2,1],dtype=torch.int)
-    # y = model(x,index)
-    # print(y.shape)
-
-    # model = BiLSTM(10, 1, 64)
-    # x = torch.randn([4, 50, 10])
-    # # index = torch.tensor([5, 3, 2, 1], dtype=torch.int)
-    # # y = model(x, index)
-    # y = model(x)
-    # print(y.shape)
-
-    # model = Worker_Net(5)
-    # x_state = torch.randn([2,5])
-    # x_order = torch.randn([2,10,4])
-    # order_num =  torch.tensor([5,3],dtype=torch.int)
-    # y = model(x_state,x_order,order_num)
-    # print(y.shape)
-
-    model = Q_Net()
-    optm = torch.optim.Adam(model.parameters(), lr=0.001)
-    loss_func = nn.MSELoss()
-
-    x_state = torch.randn([2,7])
-    x_order = torch.randn([2,10,4])
-    order_num =  torch.tensor([5,3],dtype=torch.int)
-    order_state = torch.randn([4,5])
-    q_value, price_mu, price_sigma = model(order_state,x_state,x_order,order_num)
-    # print(q_value.shape)
-    # print(price_mu.shape)
-    # print(price_sigma.shape)
-    y = torch.zeros_like(q_value)
-    loss = loss_func(q_value,y)
-    loss.backward()
-    torch.nn.utils.clip_grad_norm_(set(model.attention_price_mu.parameters())|set(model.attention_price_sigma.parameters()), 1.0)
-
-    for layer in model.worker_net.children():
-        params = layer.parameters()
-        for p in params:
-            print(p.grad)
-
-    model.feature_freeze()
-
-    for layer in model.worker_net.children():
-        params = layer.parameters()
-        for p in params:
-            print(p.grad)
-
-    optm.step()

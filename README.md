@@ -5,9 +5,11 @@
 
 ## 1. Workflow
 
+![](./img/workflow.png)
+
 ![](./img/main.png)
 
-
+![](./img/network.png)
 
 ## 2. Dataset
 
