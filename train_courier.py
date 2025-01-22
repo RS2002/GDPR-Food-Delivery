@@ -398,11 +398,14 @@ def main():
     else:
         Worker_Q_training = None
 
-    best_reward = -1e-8
-    best_epoch = 0
+    # best_reward = -1e-8
+    # best_epoch = 0
+    #
+    # best_reward_worker = -1e-8
+    # best_epoch_worker = 0
 
-    best_reward_worker = -1e-8
-    best_epoch_worker = 0
+    best_loss = 1e-8
+    best_loss_epoch = 0
 
     dic_list = []
 
@@ -457,7 +460,7 @@ def main():
         log = "Episode {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:} , Critic Loss {:} , Actor Loss {:} , Worker Loss {:} , Mask Rate {:} , Strike Rate {:}".format(
             j, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time, total_timeout, total_valid_distance, c_loss, a_loss, w_loss, mask_rate, strike_rate)
         print(log)
-        with open("finetune.txt", 'a') as file:
+        with open("courier.txt", 'a') as file:
             file.write(log+"\n")
         worker.save("latest.pth")
 
@@ -501,27 +504,41 @@ def main():
             with open('log.pkl', 'wb') as f:
                 pickle.dump(dic_list, f)
 
-            if total_reward > best_reward:
-                best_epoch = 0
-                best_reward = total_reward
+            if w_loss < best_loss:
+                best_loss_epoch = 0
+                best_loss = w_loss
                 worker.save("best.pth")
             else:
-                best_epoch += 1
-
-            if worker_reward > best_reward_worker:
-                best_epoch_worker = 0
-                best_reward_worker = worker_reward
-                worker.save("best.pth")
-            else:
-                best_epoch_worker += 1
+                best_loss_epoch += 1
 
             if j == args.minimum_episode:
-                best_epoch = 0
-                best_epoch_worker = 0
-            elif j > args.minimum_episode:
-                print("Converge Step: ", best_epoch,best_epoch_worker)
-                if best_epoch >= args.converge_epoch and best_epoch_worker >= args.converge_epoch:
+                best_loss_epoch = 0
+            if j >= args.minimum_episode:
+                print("Converge Step: ", best_loss_epoch)
+                if best_loss_epoch >= args.converge_epoch:
                     break
+
+            # if total_reward > best_reward:
+            #     best_epoch = 0
+            #     best_reward = total_reward
+            #     worker.save("best.pth")
+            # else:
+            #     best_epoch += 1
+            #
+            # if worker_reward > best_reward_worker:
+            #     best_epoch_worker = 0
+            #     best_reward_worker = worker_reward
+            #     worker.save("best.pth")
+            # else:
+            #     best_epoch_worker += 1
+            #
+            # if j == args.minimum_episode:
+            #     best_epoch = 0
+            #     best_epoch_worker = 0
+            # elif j > args.minimum_episode:
+            #     print("Converge Step: ", best_epoch,best_epoch_worker)
+            #     if best_epoch >= args.converge_epoch and best_epoch_worker >= args.converge_epoch:
+            #         break
 
 
 if __name__ == '__main__':

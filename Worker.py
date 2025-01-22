@@ -458,7 +458,7 @@ class Worker():
         self.njobs = njobs
         self.max_norm = 1.0
 
-    def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None, train=True, demand_sample_rate = 0.2):
+    def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None, train=True, demand_sample_rate = 0.2, mask_rate = None):
         torch.set_grad_enabled(False)
 
         self.time = 0
@@ -572,7 +572,11 @@ class Worker():
             else:
                 self.gen_mask_eval(0.5)
         else:
-            self.gen_mask()
+            if mask_rate is None:
+                self.gen_mask()
+            else:
+                self.gen_mask_eval(mask_rate)
+
 
         self.avg = None
 
@@ -626,6 +630,15 @@ class Worker():
         y[mask == 2] = lowest_utility
         self.lowest_utility = lowest_utility
         self.buffer_mask.append(x, x2, mask, y, episode)
+
+    def calculate_courier_loss(self, lowest_utility=35):
+        y = self.worker_reward
+        mask = self.mask.cpu().numpy()
+        y[mask == 2] = lowest_utility
+        y_hat = y[np.arange(y.shape[0]), mask, 0]
+        mse = np.mean((y-y_hat)**2)
+        mape = np.mean(np.abs(y-y_hat)/(y+1e-5))
+        return mse, mape
 
     def gen_mask_eval(self, mask_rate=0.5):
         self.mask = (torch.rand([self.num]) < mask_rate).int().to(self.device)

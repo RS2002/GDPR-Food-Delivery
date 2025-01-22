@@ -207,7 +207,7 @@ class Q_Net(nn.Module):
 
 
 class Assignment_Net(nn.Module):
-    def __init__(self, state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.0):
+    def __init__(self, state_size=7, history_order_size=4, current_order_size=5, hidden_dim=64, head=1, bi_direction=False, dropout=0.0, group = 10):
         super().__init__()
         self.worker_net = Worker_Net(state_size=state_size, order_size=history_order_size, output_dim=hidden_dim, bi_direction=bi_direction, dropout=dropout)
         self.order_net = Order_Net(state_size=current_order_size, output_size=hidden_dim, dropout=dropout)
@@ -222,7 +222,8 @@ class Assignment_Net(nn.Module):
         self.earning_predictor = MLP([hidden_dim * 2, hidden_dim, hidden_dim, 6])
 
         self.lora = nn.ModuleList()
-        for i in range(10):
+        self.group = group
+        for i in range(self.group):
             self.lora.append(MLP([state_size-3,4,hidden_dim * 2],arl=True,dropout=dropout))
 
         self.softplus = nn.Softplus()
@@ -274,37 +275,6 @@ class Assignment_Net(nn.Module):
         worker_emb = torch.concat([worker, worker_mask], dim=-1)
         return worker_emb
 
-    # def estimate_earning(self,x_state):
-    #     # worker_emb = self.worker_encode(x_state)
-    #     # worker_emb = worker_emb.detach()
-    #     # earning = self.predictor(worker_emb)
-    #
-    #     x_state = x_state.float()
-    #     worker = self.worker_net.encode(x_state)
-    #     worker_emb = worker.detach()
-    #     earning = self.predictor2(worker_emb)
-    #
-    #     earning = self.softplus(earning)
-    #     earning = earning.reshape([-1,3,2])
-    #
-    #     return earning
-
-    # def estimate_earning(self,x_state,x_private):
-    #
-    #     x_state = x_state.float()
-    #     worker = self.worker_net.encode(x_state)
-    #     worker = worker.detach()
-    #
-    #     x_private = self.private_encoder(x_private)
-    #     worker_emb = torch.concat([worker,x_private],dim=-1)
-    #
-    #     earning = self.predictor(worker_emb)
-    #
-    #     earning = self.softplus(earning)
-    #     earning = earning.reshape([-1,3,2])
-    #
-    #     return earning
-
     def estimate_earning(self,x_state,x_private):
 
         x_state = x_state.float()
@@ -312,11 +282,11 @@ class Assignment_Net(nn.Module):
         worker_emb = worker.detach()
 
         # group_id = (x_private[...,-1:] - 0.85) // 0.03
-        group_id = (x_private[...,-1:] - 0.0) // 0.1
+        group_id = (x_private[...,-1:] - 0.0) // (1.0 / self.group)
 
-        group_id[group_id<0] = 0
-        group_id[group_id>9] = 9
-        for i in range(10):
+        group_id[group_id < 0] = 0
+        group_id[group_id >= self.group] = self.group - 1
+        for i in range(self.group):
             private_encoder = self.lora[i]
             x_private_emb = private_encoder(x_private)
             worker_emb = worker_emb + x_private_emb * (group_id == i).float()
