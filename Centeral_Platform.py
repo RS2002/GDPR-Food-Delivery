@@ -162,6 +162,8 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
         if price<0:
             # price=price-price+1e-8
             price = price - price
+        elif price>1.2:
+            price = price - price + 1.2
         price_log_prop = price_dist.log_prob(price)
         price, price_log_prop = price.item(), price_log_prop.item() # avoid gradient propagation
 

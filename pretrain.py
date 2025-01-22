@@ -13,7 +13,7 @@ def get_args():
 
     parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--train_times', type=int, default=10)
-    parser.add_argument('--lr', type=float, default=0.0005)
+    parser.add_argument('--lr', type=float, default=5e-5)
     parser.add_argument('--gamma', type=float, default=0.9)
     parser.add_argument('--eps_clip', type=float, default=0.1)
     parser.add_argument('--max_step', type=int, default=60)
@@ -36,10 +36,10 @@ def get_args():
 
     parser.add_argument("--simultaneity_train", action="store_true",default=False)
     parser.add_argument('--lamada', type=float, default=0.9)
-    parser.add_argument('--kl_threshold', type=float, default=0.1)
+    parser.add_argument('--kl_threshold', type=float, default=0.05)
 
     parser.add_argument('--eval_episode', type=int, default=10)
-    parser.add_argument('--critic_episode', type=int, default=4)
+    parser.add_argument('--critic_episode', type=int, default=3)
     parser.add_argument('--actor_episode', type=int, default=1)
 
     parser.add_argument('--epsilon', type=float, default=1.0)
@@ -133,17 +133,17 @@ def main():
     while True:
         j += 1
 
+        if args.rand_sample_rate:
+            demand_sample_rate = random.uniform(0.1, 0.7)
+        else:
+            demand_sample_rate = args.demand_sample_rate
+
         c_loss, a_loss, w_loss = 0, 0, 0
         reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
         worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value,
                      speed=speed,
-                     capacity=capacity, group=group, train=True)
+                     capacity=capacity, group=group, train=True, demand_sample_rate=demand_sample_rate)
         platform.reset(discount_factor=args.gamma)
-
-        if args.rand_sample_rate:
-            demand_sample_rate = random.uniform(0.1, 0.9)
-        else:
-            demand_sample_rate = args.demand_sample_rate
 
 
         demand.reset(episode_time=0, p_sample=demand_sample_rate, wait_time=args.order_max_wait_time)
@@ -258,10 +258,11 @@ def main():
             # worker.buffer_price.reset()
 
             worker.schedule.step()
+            # worker.schedule2.step()
 
             reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
             worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value, speed=speed,
-                         capacity=capacity, group=group, train=False)
+                         capacity=capacity, group=group, train=False, demand_sample_rate=args.demand_sample_rate)
             platform.reset(discount_factor=args.gamma)
             demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
 
@@ -350,7 +351,7 @@ def main():
             if j == args.minimum_episode:
                 best_epoch = 0
                 best_epoch_worker = 0
-            elif j > args.minimum_episode:
+            if j >= args.minimum_episode:
                 print("Converge Step: ", best_epoch,best_epoch_worker)
                 if best_epoch >= args.converge_epoch:
                     break

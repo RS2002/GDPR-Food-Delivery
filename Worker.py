@@ -83,6 +83,7 @@ def norm(order, x_state, x_order, lat_min=22.24370366972477, lat_max=22.50517155
     # 4. reservation_value
     x_state[:,5] = (x_state[:,5] - 0.85) / 0.3
     x_state[:,6] = (x_state[:,6] - 0.85) / 0.3
+    x_order[:, :, 4] = (x_order[:, :, 4] - 0.85) / 0.3 * (x_order[:, :, 4] != 0)
 
     return order, x_state, x_order
 
@@ -413,9 +414,9 @@ class Worker():
         self.zone_lookup = pd.read_csv(zone_table_path)
         self.coordinate_lookup = np.array(self.zone_lookup[['lat', 'lon']])
 
-        self.Q_training = Assignment_Net(state_size=8, history_order_size=5, current_order_size=16, hidden_dim=64, head=1,
+        self.Q_training = Assignment_Net(state_size=8, history_order_size=5, current_order_size=17, hidden_dim=64, head=3,
                                 bi_direction=bilstm, dropout=dropout).to(device)
-        self.Q_target = Assignment_Net(state_size=8, history_order_size=5, current_order_size=16, hidden_dim=64, head=1,
+        self.Q_target = Assignment_Net(state_size=8, history_order_size=5, current_order_size=17, hidden_dim=64, head=3,
                               bi_direction=bilstm, dropout=dropout).to(device)
 
         if self.intelligent_worker:
@@ -448,14 +449,18 @@ class Worker():
         # self.loss_func = nn.MSELoss()
 
         # self.optim = torch.optim.Adam(self.Q_training.parameters(), lr=lr, weight_decay=0.01)
-        self.optim = torch.optim.Adam(self.Q_training.parameters(), lr=lr, weight_decay=0.0)
+        self.optim = torch.optim.Adam(self.Q_training.parameters(), lr=lr)
         self.schedule = torch.optim.lr_scheduler.ExponentialLR(self.optim, gamma=0.99)
-
+        # self.optim2 = torch.optim.Adam(self.Q_training.parameters(), lr=lr * 0.5)
+        # self.schedule2 = torch.optim.lr_scheduler.ExponentialLR(self.optim2, gamma=0.99)
         # self.reset(max_step,num,reservation_value, speed, capacity, group)
 
         self.njobs = njobs
+        self.max_norm = 1.0
 
-    def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None, train=True):
+    def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None, train=True, demand_sample_rate = 0.2):
+        torch.set_grad_enabled(False)
+
         self.time = 0
 
         if train:
@@ -574,8 +579,9 @@ class Worker():
         self.mask_prop = torch.mean((self.mask == 1).float()).item()
         self.strike_prop = torch.mean((self.mask == 2).float()).item()
 
-        self.global_state = np.zeros([11])
-        self.global_state[-1] = torch.sum((self.mask == 1).float()).item() / 1000
+        self.global_state = np.zeros([12])
+        self.global_state[-1] = demand_sample_rate
+        self.global_state[-2] = torch.sum((self.mask == 1).float()).item() / 1000
         mask = self.mask.cpu().numpy()
         reservation_value_hat = (self.positive_history + self.negative_history) / 2
         for i in range(10):
@@ -589,7 +595,6 @@ class Worker():
             self.global_state[i] = np.sum((mask_temp == 0)) / 100
 
     def gen_mask(self):
-        torch.set_grad_enabled(False)
         t = np.array([[0]] * self.num)
         worker_state = np.concatenate(
             [self.observe_space[:, :3], np.expand_dims(self.speed, axis=-1), np.expand_dims(self.capacity, axis=-1),
@@ -626,8 +631,6 @@ class Worker():
         self.mask = (torch.rand([self.num]) < mask_rate).int().to(self.device)
 
     def gen_mask_pretrain(self):
-
-        torch.set_grad_enabled(False)
         rand = random.random()
         group_num = random.randint(5, 30)
         t = np.array([[0]] * self.num)
@@ -762,7 +765,6 @@ class Worker():
         self.time = current_time
         t = np.array([[self.time / 60]] * self.num)
         # self.Q_training.eval()
-        torch.set_grad_enabled(False)
         # 1. contstruct the worker state
         # print(self.observe_space.shape, self.speed.shape, self.capacity.shape, self.positive_history.shape, self.negative_history.shape)
         worker_state = np.concatenate(
@@ -969,8 +971,6 @@ class Worker():
                     price_mu), torch.diag(price_sigma)
 
                 kl_loss = kl_divergence(price_mu, price_sigma, mu_old_temp, sigma_old_temp)
-                # kl_loss = kl_div
-
                 td_target_temp = td_target_temp.float()
                 critic_loss = self.loss_func(current_state_value, td_target_temp.detach())
 
@@ -1006,7 +1006,7 @@ class Worker():
 
                 self.optim.zero_grad()
                 loss.backward()
-                # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)
+                # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), self.max_norm)
                 has_nan = False
                 for name, param in self.Q_training.named_parameters():
                     if param.grad is not None:
@@ -1024,7 +1024,7 @@ class Worker():
         if update_critic:
             self.update_Qtarget()
         # self.schedule.step()
-
+        torch.set_grad_enabled(False)
         return np.mean(c_loss), np.mean(a_loss)
 
     def train_critic(self, batch_size=512, train_times=30, show_pbar=False):
@@ -1075,7 +1075,7 @@ class Worker():
 
             self.optim.zero_grad()
             loss.backward()
-            # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)
+            # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), self.max_norm)
 
             has_nan = False
             for name, param in self.Q_training.named_parameters():
@@ -1092,6 +1092,7 @@ class Worker():
 
         self.update_Qtarget()
         # self.schedule.step()
+        torch.set_grad_enabled(False)
         return np.mean(c_loss), np.mean(a_loss)
 
     def train_mask(self, batch_size=512, train_times=10):
@@ -1132,7 +1133,7 @@ class Worker():
 
             self.optim.zero_grad()
             loss.backward()
-            # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), 1.0)
+            # torch.nn.utils.clip_grad_norm_(self.Q_training.parameters(), self.max_norm)
             has_nan = False
             for name, param in self.Q_training.named_parameters():
                 if param.grad is not None:
@@ -1146,6 +1147,7 @@ class Worker():
             loss_list.append(loss.item())
 
         # self.schedule.step()
+        torch.set_grad_enabled(False)
         return np.mean(loss_list)
 
 

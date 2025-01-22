@@ -106,19 +106,19 @@ class Worker_Net(nn.Module):
 class Order_Net(nn.Module):
     def __init__(self, state_size=5, output_size=32, dropout=0.0):
         super().__init__()
-        self.order_encoder = MLP([state_size - 11, output_size, output_size], arl=True, dropout=dropout)
-        self.global_encoder = MLP([11, output_size, output_size], arl=True, dropout=dropout)
+        self.order_encoder = MLP([state_size - 12, output_size, output_size], arl=True, dropout=dropout)
+        self.global_encoder = MLP([12, output_size, output_size], arl=True, dropout=dropout)
         self.fusion_layer = MLP([output_size * 2, output_size, output_size], arl=False, dropout=dropout)
 
     def forward(self, x):
-        y1 = self.order_encoder(x[:,:-11])
-        y2 = self.global_encoder(x[:,-11:])
+        y1 = self.order_encoder(x[:,:-12])
+        y2 = self.global_encoder(x[:,-12:])
         y = torch.concat([y1,y2],dim=-1)
         y = self.fusion_layer(y)
         return y
 
 class Attention_Score(nn.Module):
-    def __init__(self, input_dims=64, hidden_dims=64, head=1, dropout=0.0):
+    def __init__(self, input_dims=64, hidden_dims=64, head=1, dropout=0.0, method="mean"):
         super().__init__()
         self.q_linear = nn.ModuleList()
         self.k_linear = nn.ModuleList()
@@ -126,7 +126,9 @@ class Attention_Score(nn.Module):
             self.q_linear.append(MLP([input_dims,hidden_dims,hidden_dims], dropout=dropout))
             self.k_linear.append(MLP([input_dims,hidden_dims,hidden_dims], dropout=dropout))
         self.head = head
-        if self.head != 1:
+        self.method = method
+
+        if self.method != "mean":
             self.fuse_layer = MLP([head,16,1], dropout=dropout)
 
     def forward(self,q,k):
@@ -142,9 +144,9 @@ class Attention_Score(nn.Module):
             else:
                 attn_matrix = torch.concat([attn_matrix, attn],dim=-1)
 
-        # attn_matrix = torch.mean(attn_matrix, dim=-1)
-
-        if self.head != 1:
+        if self.method == "mean":
+            attn_matrix = torch.mean(attn_matrix,dim=-1)
+        else:
             attn_matrix = self.fuse_layer(attn_matrix)
         attn_matrix = attn_matrix.squeeze(-1)
         return attn_matrix
@@ -217,13 +219,16 @@ class Assignment_Net(nn.Module):
         self.attention_price_sigma = Attention_Score(input_dims=hidden_dim, hidden_dims=hidden_dim, head=head, dropout=dropout)
         self.sigmoid = nn.Sigmoid()
         # Estimated Earning
-        self.predictor = MLP([hidden_dim, hidden_dim, hidden_dim, 6])
+        self.earning_predictor = MLP([hidden_dim * 2, hidden_dim, hidden_dim, 6])
 
-        self.multi_lora = nn.ModuleList()
+        self.lora = nn.ModuleList()
         for i in range(10):
-            self.multi_lora.append(MLP([state_size-3,4,hidden_dim],arl=True,dropout=dropout))
+            self.lora.append(MLP([state_size-3,4,hidden_dim * 2],arl=True,dropout=dropout))
 
         self.softplus = nn.Softplus()
+
+        self.q_detach = False
+        self.p_detach = False
 
     def encode(self,order,x_state,x_order,order_num=None,mask=None):
         order_num = order_num.int()
@@ -245,13 +250,17 @@ class Assignment_Net(nn.Module):
 
     def forward(self,order,x_state,x_order,order_num=None,mask=None):
         order_emb, worker_emb = self.encode(order,x_state,x_order,order_num,mask)
-        q_matrix = self.attention(worker_emb,order_emb)
-
-        order_emb, worker_emb = order_emb.detach(), worker_emb.detach()
+        if self.q_detach:
+            order_emb1, worker_emb1 = order_emb.detach(), worker_emb.detach()
+        else:
+            order_emb1, worker_emb1 = order_emb, worker_emb
+        q_matrix = self.attention(worker_emb1, order_emb1)
+        if self.p_detach:
+            order_emb, worker_emb = order_emb.detach(), worker_emb.detach()
         price_mu_matrix = self.attention_price_mu(worker_emb, order_emb)
-        price_mu_matrix = self.sigmoid(price_mu_matrix) * 2
+        price_mu_matrix = self.sigmoid(price_mu_matrix) * 0.4 + 0.8
         price_sigma_matrix = self.attention_price_sigma(worker_emb, order_emb)
-        price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.3 + 1e-5
+        price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.2 + 1e-5
 
         return q_matrix, price_mu_matrix, price_sigma_matrix
 
@@ -300,18 +309,19 @@ class Assignment_Net(nn.Module):
 
         x_state = x_state.float()
         worker = self.worker_encode(x_state)
-        worker = worker.detach()
+        worker_emb = worker.detach()
 
-        group_id = (x_private[-1] - 0.85) // 0.03
-        if group_id < 0:
-            group_id = 0
-        elif group_id > 9:
-            group_id = 9
-        private_encoder = self.multi_lora[group_id]
-        x_private = private_encoder(x_private)
-        worker_emb = worker + x_private
+        # group_id = (x_private[...,-1:] - 0.85) // 0.03
+        group_id = (x_private[...,-1:] - 0.0) // 0.1
 
-        earning = self.predictor(worker_emb)
+        group_id[group_id<0] = 0
+        group_id[group_id>9] = 9
+        for i in range(10):
+            private_encoder = self.lora[i]
+            x_private_emb = private_encoder(x_private)
+            worker_emb = worker_emb + x_private_emb * (group_id == i).float()
+
+        earning = self.earning_predictor(worker_emb)
 
         earning = self.softplus(earning)
         earning = earning.reshape([-1,3,2])
