@@ -1,4 +1,4 @@
-# FFD: Fair Food Delivery
+# GFD: GDPR Food Delivery
 **Article:**
 
 
@@ -19,7 +19,17 @@ Please refer our previous work [RS2002/Double-PDF: Official Repository for The P
 
 ## 3. How to Run
 
-### 3.1 Pre-train
+### 3.1 Platform Training
+
+#### 3.1.1 Pre-training
+
+```
+
+```
+
+
+
+#### 3.1.2 Fine-tuning
 
 ```shell
 
@@ -27,9 +37,17 @@ Please refer our previous work [RS2002/Double-PDF: Official Repository for The P
 
 
 
-### 3.2 Fine-tune
+### 3.2 Courier Training
 
 ```shell
+
+```
+
+
+
+### 3.3 Evaluation
+
+```
 
 ```
 

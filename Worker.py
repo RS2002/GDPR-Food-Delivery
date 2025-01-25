@@ -566,16 +566,18 @@ class Worker():
         self.worker_assign_order = [0] * self.num
         self.worker_reject_order = [0] * self.num
 
-        if self.pretrain:
-            if train:
-                self.gen_mask_pretrain()
-            else:
-                self.gen_mask_eval(0.5)
+        if mask_rate is not None:
+            self.gen_mask_eval(mask_rate)
         else:
-            if mask_rate is None:
-                self.gen_mask()
+            if self.pretrain:
+                if train:
+                    self.gen_mask_pretrain()
+                else:
+                    self.gen_mask_eval(0.5)
             else:
-                self.gen_mask_eval(mask_rate)
+                self.gen_mask()
+
+        self.demand_sample_rate = demand_sample_rate
 
 
         self.avg = None
@@ -585,6 +587,32 @@ class Worker():
 
         self.global_state = np.zeros([12])
         self.global_state[-1] = demand_sample_rate
+        self.global_state[-2] = torch.sum((self.mask == 1).float()).item() / 1000
+        mask = self.mask.cpu().numpy()
+        reservation_value_hat = (self.positive_history + self.negative_history) / 2
+        for i in range(10):
+            if i == 0:
+                mask_temp = mask[reservation_value_hat < 0.88]
+            elif i == 9:
+                mask_temp = mask[reservation_value_hat >= 1.12]
+            else:
+                mask_temp = mask[(reservation_value_hat >= 0.85 + 0.03 * i) & (reservation_value_hat < 0.88 + 0.03 * i)]
+
+            self.global_state[i] = np.sum((mask_temp == 0)) / 100
+
+    def reset_mask(self,mask_rate=None):
+        if mask_rate is None:
+            self.gen_mask()
+        else:
+            self.gen_mask_eval(mask_rate)
+
+        self.avg = None
+
+        self.mask_prop = torch.mean((self.mask == 1).float()).item()
+        self.strike_prop = torch.mean((self.mask == 2).float()).item()
+
+        self.global_state = np.zeros([12])
+        self.global_state[-1] = self.demand_sample_rate
         self.global_state[-2] = torch.sum((self.mask == 1).float()).item() / 1000
         mask = self.mask.cpu().numpy()
         reservation_value_hat = (self.positive_history + self.negative_history) / 2
@@ -635,7 +663,7 @@ class Worker():
         y = self.worker_reward
         mask = self.mask.cpu().numpy()
         y[mask == 2] = lowest_utility
-        y_hat = y[np.arange(y.shape[0]), mask, 0]
+        y_hat = self.y[np.arange(y.shape[0]), mask, 0]
         mse = np.mean((y-y_hat)**2)
         mape = np.mean(np.abs(y-y_hat)/(y+1e-5))
         return mse, mape

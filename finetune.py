@@ -10,6 +10,7 @@ import random
 
 def get_args():
     parser = argparse.ArgumentParser(description='')
+    parser.add_argument('--mask_rate', type=float, default=None)
 
     parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--train_times', type=int, default=10)
@@ -145,7 +146,7 @@ def main():
         reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
         worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value,
                      speed=speed,
-                     capacity=capacity, group=group, train=True, demand_sample_rate=demand_sample_rate)
+                     capacity=capacity, group=group, train=True, demand_sample_rate=demand_sample_rate, mask_rate=args.mask_rate)
         platform.reset(discount_factor=args.gamma)
 
 
@@ -265,7 +266,7 @@ def main():
 
             reservation_value, speed, capacity, group = group_generation_func(args.worker_num, args.mode)
             worker.reset(max_step=args.max_step, num=args.worker_num, reservation_value=reservation_value, speed=speed,
-                         capacity=capacity, group=group, train=False, demand_sample_rate=args.demand_sample_rate)
+                         capacity=capacity, group=group, train=False, demand_sample_rate=args.demand_sample_rate, mask_rate=args.mask_rate)
             platform.reset(discount_factor=args.gamma)
             demand.reset(episode_time=0, p_sample=args.demand_sample_rate, wait_time=args.order_max_wait_time)
 

@@ -37,7 +37,7 @@ def get_args():
     parser.add_argument('--lamada', type=float, default=0.9)
     parser.add_argument('--kl_threshold', type=float, default=0.1)
 
-    parser.add_argument('--eval_episode', type=int, default=10)
+    parser.add_argument('--eval_episode', type=int, default=5)
     parser.add_argument('--critic_episode', type=int, default=2)
     parser.add_argument('--actor_episode', type=int, default=1)
 
@@ -51,7 +51,7 @@ def get_args():
     parser.add_argument('--init_episode', type=int, default=0)
     parser.add_argument('--njobs', type=int, default=24)
 
-    parser.add_argument("--model_path",type=str,default="./0.2/courier/latest.pth")
+    parser.add_argument("--model_path",type=str,default="./0.2/gdpr/latest.pth")
 
     parser.add_argument("--intelligent_worker", action="store_true",default=False)
     parser.add_argument('--worker_reject_punishment', type=float, default=0.0)
@@ -143,8 +143,8 @@ def main():
             demand.update()
 
         mse, mape = 0, 0
-        if args.mask_rate is not None:
-            mse, mape = worker.calculate_courier_loss(mse,mape)
+        if args.mask_rate is None:
+            mse, mape = worker.calculate_courier_loss(args.lowest_utility)
 
         total_pickup = platform.PickUp
         total_reward = platform.Total_Reward / args.worker_num
@@ -156,7 +156,7 @@ def main():
         total_valid_distance = np.sum(platform.valid_distance)
 
         log = "Eval {:} , Platform Reward {:} , Worker Reward {:} , Order Pickup {:} , Worker Reject Num {:} , Average Detour {:} , Average Travel Time {:} , Total Timeout Order {:} , Total Valid Distance {:}, MSE {:} , MAPE {:} , Mask Rate {:} , Strike Rate {:}".format(
-            j, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time, total_timeout, total_valid_distance, mse, mape, mask_rate, strike_rate)
+            j+1, total_reward, worker_reward, total_pickup, worker_reject, average_detour, average_travel_time, total_timeout, total_valid_distance, mse, mape, mask_rate, strike_rate)
         print(log)
         with open("evaluation.txt", 'a') as file:
             file.write(log+"\n")
@@ -175,6 +175,8 @@ def main():
         print("Real Price Avg: Pos {:} , Neg {:}, Total {:}".format(price_pos, price_neg, price_total))
         print()
 
+        if args.mask_rate is not None:
+            worker.y = np.zeros([1000,3,2])
         dic = {
             'episode': j,
             'reservation_value': reservation_value,
@@ -196,3 +198,6 @@ def main():
         dic_list.append(dic)
         with open('log_eval.pkl', 'wb') as f:
             pickle.dump(dic_list, f)
+
+if __name__ == '__main__':
+    main()
