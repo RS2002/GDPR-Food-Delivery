@@ -33,6 +33,7 @@ def get_args():
     parser.add_argument("--bilstm", action="store_true",default=False)
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--mode', type=int, default=2)
+    parser.add_argument("--worker_mode",type=str,default="benchmark") # gdpr, benchmark, mask
 
     parser.add_argument("--simultaneity_train", action="store_true",default=False)
     parser.add_argument('--lamada', type=float, default=0.9)
@@ -390,7 +391,7 @@ def main():
 
     worker = Worker(buffer=buffer, buffer_price=buffer_price, buffer_mask=buffer_mask, lr=args.lr, gamma=args.gamma, eps_clip=args.eps_clip, max_step=args.max_step,
                     num=args.worker_num, device=device, zone_table_path=args.zone_table_path, model_path=args.model_path, njobs=args.njobs,
-                    intelligent_worker=intelligent_worker, probability_worker = probability_worker, bilstm = args.bilstm, dropout = args.dropout, pretrain = False)
+                    intelligent_worker=intelligent_worker, probability_worker = probability_worker, bilstm = args.bilstm, dropout = args.dropout, pretrain = False, worker_mode=args.worker_mode)
     reward_func = reward_func_generator(args.reward_parameter, args.order_threshold)
 
     if intelligent_worker:

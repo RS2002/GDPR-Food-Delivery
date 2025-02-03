@@ -388,7 +388,7 @@ class Worker():
     def __init__(self, buffer, buffer_price, buffer_mask, lr=0.0001, gamma=0.99, eps_clip=0.2, max_step=60,
                  history_num=5, num=1000, reservation_value=None, speed=None, capacity=None, group=None, device=None,
                  zone_table_path="../data/zone_table.csv", model_path=None,
-                 njobs=24, intelligent_worker=False, probability_worker=False, bilstm=False, dropout=0.0, pretrain = False):
+                 njobs=24, intelligent_worker=False, probability_worker=False, bilstm=False, dropout=0.0, pretrain = False, worker_mode = "gdpr"):
         super().__init__()
         self.intelligent_worker = intelligent_worker
         self.probability_worker = probability_worker
@@ -457,6 +457,7 @@ class Worker():
 
         self.njobs = njobs
         self.max_norm = 1.0
+        self.worker_mode = worker_mode
 
     def reset(self, max_step=60, num=1000, reservation_value=None, speed=None, capacity=None, group=None, train=True, demand_sample_rate = 0.2, mask_rate = None):
         torch.set_grad_enabled(False)
@@ -647,6 +648,12 @@ class Worker():
         y = self.Q_training.estimate_earning(x,x2)
         self.y = y.cpu().numpy()
         samples = torch.normal(y[..., 0], y[..., 1])
+
+        if self.worker_mode == "benchmark":
+            samples[:,1] = -INF
+        elif self.worker_mode == "mask":
+            samples[:,0] = -INF
+
         self.mask = torch.argmax(samples, dim=-1)
 
     def mask_append(self, lowest_utility=35, episode=0):
