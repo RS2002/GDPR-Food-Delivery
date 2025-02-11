@@ -2,15 +2,16 @@ import torch
 import torch.nn as nn
 
 class MLP(nn.Module):
-    def __init__(self, layer_sizes=[64,64,64,1], arl=False, dropout=0.0):
+    def __init__(self, layer_sizes=[64,64,64,1], arl=False, dropout=0.0, bias = True):
         super().__init__()
         self.arl = arl
-        self.attention = nn.Sequential(
-            nn.Linear(layer_sizes[0],layer_sizes[0]),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(layer_sizes[0],layer_sizes[0])
-        )
+        if self.arl:
+            self.attention = nn.Sequential(
+                nn.Linear(layer_sizes[0],layer_sizes[0]),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(layer_sizes[0],layer_sizes[0])
+            )
 
         self.layer_sizes = layer_sizes
         if len(layer_sizes) < 2:
@@ -19,7 +20,7 @@ class MLP(nn.Module):
         self.act = nn.LeakyReLU(negative_slope=0.01, inplace=True)
         self.dropout = nn.Dropout(dropout)
         for i in range(len(layer_sizes) - 1):
-            self.layers.append(nn.Linear(layer_sizes[i], layer_sizes[i + 1]))
+            self.layers.append(nn.Linear(layer_sizes[i], layer_sizes[i + 1], bias = bias))
 
     def forward(self, x):
         if self.arl:
@@ -224,7 +225,7 @@ class Assignment_Net(nn.Module):
         self.lora = nn.ModuleList()
         self.group = group
         for i in range(self.group):
-            self.lora.append(MLP([state_size-3,4,hidden_dim * 2],arl=True,dropout=dropout))
+            self.lora.append(MLP([state_size-3,4,hidden_dim * 2],arl=False,dropout=dropout,bias=False))
 
         self.softplus = nn.Softplus()
 
@@ -293,10 +294,27 @@ class Assignment_Net(nn.Module):
 
         earning = self.earning_predictor(worker_emb)
 
-        earning = self.softplus(earning)
-        earning = earning.reshape([-1,3,2])
+        # earning = self.softplus(earning)
+        # earning = earning.reshape([-1,3,2])
+
+        earning = earning.reshape([-1, 3, 2])
+        earning_mean = earning[...,0:1]
+        earning_std = earning[...,1:2]
+        earning_std = self.softplus(earning_std)
+        earning = torch.concat([earning_mean,earning_std],dim=-1)
 
         return earning
+
+    def reset_lora(self,index=None):
+        if index is None:
+            for i in range(self.group):
+                for layer in self.lora[i].layers:
+                    if isinstance(layer, nn.Linear):
+                        layer.reset_parameters()
+        else:
+            for layer in self.lora[index].layers:
+                if isinstance(layer, nn.Linear):
+                    layer.reset_parameters()
 
 
 class Price_Net(nn.Module):

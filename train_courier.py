@@ -18,7 +18,7 @@ def get_args():
     parser.add_argument('--eps_clip', type=float, default=0.1)
     parser.add_argument('--max_step', type=int, default=60)
     parser.add_argument('--converge_epoch', type=int, default=0)
-    parser.add_argument('--minimum_episode', type=int, default=1000)
+    parser.add_argument('--minimum_episode', type=int, default=1000) # gdpr:1000
     parser.add_argument('--worker_num', type=int, default=1000)
     parser.add_argument('--buffer_capacity', type=int, default=30000)
 
@@ -33,7 +33,7 @@ def get_args():
     parser.add_argument("--bilstm", action="store_true",default=False)
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--mode', type=int, default=2)
-    parser.add_argument("--worker_mode",type=str,default="benchmark") # gdpr, benchmark, mask
+    parser.add_argument("--worker_mode",type=str,default="gdpr") # gdpr, benchmark, mask
 
     parser.add_argument("--simultaneity_train", action="store_true",default=False)
     parser.add_argument('--lamada', type=float, default=0.9)
@@ -480,6 +480,8 @@ def main():
         print()
 
         if j % args.eval_episode == 0:
+            if j <= 500:
+                worker.Q_training.reset_lora((j//10)%10)
 
             worker.schedule.step()
             dic = {

@@ -601,9 +601,9 @@ class Worker():
 
             self.global_state[i] = np.sum((mask_temp == 0)) / 100
 
-    def reset_mask(self,mask_rate=None):
+    def reset_mask(self,mask_rate=None,type=None):
         if mask_rate is None:
-            self.gen_mask()
+            self.gen_mask(type)
         else:
             self.gen_mask_eval(mask_rate)
 
@@ -627,7 +627,10 @@ class Worker():
 
             self.global_state[i] = np.sum((mask_temp == 0)) / 100
 
-    def gen_mask(self):
+    def gen_mask(self,type=None):
+        if type is None:
+            type = self.worker_mode
+
         t = np.array([[0]] * self.num)
         worker_state = np.concatenate(
             [self.observe_space[:, :3], np.expand_dims(self.speed, axis=-1), np.expand_dims(self.capacity, axis=-1),
@@ -649,9 +652,9 @@ class Worker():
         self.y = y.cpu().numpy()
         samples = torch.normal(y[..., 0], y[..., 1])
 
-        if self.worker_mode == "benchmark":
+        if type == "benchmark":
             samples[:,1] = -INF
-        elif self.worker_mode == "mask":
+        elif type == "mask":
             samples[:,0] = -INF
 
         self.mask = torch.argmax(samples, dim=-1)
@@ -808,6 +811,12 @@ class Worker():
                     mask[rand < strike_prob] = 2
 
         self.mask = torch.from_numpy(mask).to(self.device)
+
+        if self.worker_mode == "benchmark":
+            self.mask[self.mask==1]=0
+        elif self.worker_mode == "mask":
+            self.mask[self.mask==0]=1
+
 
     def observe(self, order, current_time, exploration_rate=0):
         self.time = current_time
