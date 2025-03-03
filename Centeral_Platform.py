@@ -238,7 +238,8 @@ def excute(observe, reservation_value, speed, current_order, current_order_num, 
                 time_add = np.sum(new_total_travel_time) - original_total_travel_time # total added time of all orders
 
                 # added workload
-                work_add = np.max(new_total_travel_time) - np.max(current_order[:, 3])
+                # work_add = np.max(new_total_travel_time) - np.max(current_order[:, 3])
+                work_add = np.max(new_time) + pickup_time[0] - np.max(current_order[:, 2])
                 salary = work_add * price
                 reward = reward_func(time_add / speed, timeout, salary, direct_distance, price)
                 feedback = [[observe,current_order,current_order_num,new_orders_state[assignment], current_time], [price,price_log_prop,work_add,salary], reward, pickup_time[0]]
