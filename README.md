@@ -1,6 +1,6 @@
 # GFD: GDPR Food Delivery
 
-**Article:** Zijian Zhao, Sen Li*, " " (under way)
+**Article:** Zijian Zhao, Sen Li*, "GDPR’s Impact on Food Delivery Market: Exploring Courier-Platform Games via Multi-Agent Reinforcement Learning" (under way)
 
 The code is based on [RS2002/Double-PDF: Official Repository for The Paper, Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework](https://github.com/RS2002/Double-PDF).
 
