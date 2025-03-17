@@ -6,6 +6,10 @@ The code is based on [RS2002/Double-PDF: Official Repository for The Paper, Disc
 
 
 
+**Please note there is a bug in detour time calculation and we will fix it later.**
+
+
+
 ## 1. Workflow
 
 ![](./img/workflow.png)
