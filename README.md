@@ -2,12 +2,15 @@
 
 **Article:** Zijian Zhao, Sen Li*, "The Impact of GDPR on On-Demand Food-Delivery Platforms with Discriminatory Order Assignment and Personalized Courier Payment" (under way)
 
-The code is based on [RS2002/Double-PDF: Official Repository for The Paper, Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework](https://github.com/RS2002/Double-PDF).
+
 
 **Notice:**
 
 1. Please note there is a bug in detour time calculation and we will fix it later.
-2. We have improved the model according to our latest work [Triple-BERT (a TD3-based method for ride pooling)](https://github.com/RS2002/Triple-BERT). The original version is in the `ori` folder.
+2. We have improved the model according to our latest work [Triple-BERT](https://github.com/RS2002/Triple-BERT). The original version is in the `ori` folder.
+3. The code is based on our previous work [RS2002/Double-PDF: Official Repository for The Paper, Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework](https://github.com/RS2002/Double-PDF).
+
+
 
 ## 1. Workflow
 
