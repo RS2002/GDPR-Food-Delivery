@@ -1,7 +1,7 @@
 # DFD: Data-privacy-regulation Food Delivery
 
 **Article:** 
-Zijian Zhao, Sen Li\*, "The Impact of GDPR on On-Demand Food-Delivery Platforms with Discriminatory Order Assignment and Personalized Courier Payment" (under review)
+Zijian Zhao, Sen Li\*, "The Impacts of Data Privacy Regulations on Food-Delivery Platforms" (under review)
 Zijian Zhao, Sen Li\*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework" (under revise)
 
 **Previous Repository: **
