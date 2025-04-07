@@ -1,14 +1,14 @@
-# GFD: GDPR Food Delivery
+# DFD: Data-privacy-regulation Food Delivery
 
-**Article:** Zijian Zhao, Sen Li*, "The Impact of GDPR on On-Demand Food-Delivery Platforms with Discriminatory Order Assignment and Personalized Courier Payment" (under way)
+**Article:** 
+Zijian Zhao, Sen Li\*, "The Impact of GDPR on On-Demand Food-Delivery Platforms with Discriminatory Order Assignment and Personalized Courier Payment" (under review)
+Zijian Zhao, Sen Li\*, "Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework" (under revise)
 
-
+**Previous Repository: **
+[RS2002/Double-PDF: Official Repository for The Paper, Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework](https://github.com/RS2002/Double-PDF)
 
 **Notice:**
-
-1. Please note there is a bug in detour time calculation and we will fix it later.
-2. We have improved the model according to our latest work [Triple-BERT](https://github.com/RS2002/Triple-BERT). The original version is in the `ori` folder.
-3. The code is based on our previous work [RS2002/Double-PDF: Official Repository for The Paper, Discriminatory Order Assignment and Payment-Setting on Food-Delivery Platforms: A Multi-Action and Multi-Agent Reinforcement Learning Framework](https://github.com/RS2002/Double-PDF).
+Please note there is a bug in detour time calculation and we will fix it later.
 
 
 

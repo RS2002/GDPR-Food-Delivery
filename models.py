@@ -128,9 +128,9 @@ class Attention_Score(nn.Module):
         for i in range(self.head):
             query=self.q_linear[i](q)
             key=self.k_linear[i](k)
-            key = key ** 2
-            norms = torch.norm(key, dim=1, keepdim=True) + 1e-8
-            key = key / norms
+            # key = key ** 2
+            # norms = torch.norm(key, dim=1, keepdim=True) + 1e-8
+            # key = key / norms
 
             attn = torch.mm(query,key.T)
             if self.head == 1:
