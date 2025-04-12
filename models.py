@@ -128,9 +128,9 @@ class Attention_Score(nn.Module):
         for i in range(self.head):
             query=self.q_linear[i](q)
             key=self.k_linear[i](k)
-            # key = key ** 2
-            # norms = torch.norm(key, dim=1, keepdim=True) + 1e-8
-            # key = key / norms
+            key = key ** 2
+            norms = torch.norm(key, dim=1, keepdim=True) + 1e-8
+            key = key / norms
 
             attn = torch.mm(query,key.T)
             if self.head == 1:
@@ -191,6 +191,7 @@ class Assignment_Net(nn.Module):
         self.mask_net = Worker_Net(state_size=state_size-4, order_size=history_order_size-1, output_dim=hidden_dim, bi_direction=bi_direction, dropout=dropout)
         # Q-value
         self.attention = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head, dropout=dropout)
+        self.attention2 = Attention_Score(input_dims=hidden_dim,hidden_dims=hidden_dim,head=head, dropout=dropout)
         # Payment
         self.attention_price_mu = Attention_Score(input_dims=hidden_dim, hidden_dims=hidden_dim, head=head, dropout=dropout)
         self.attention_price_sigma = Attention_Score(input_dims=hidden_dim, hidden_dims=hidden_dim, head=head, dropout=dropout)
@@ -232,7 +233,10 @@ class Assignment_Net(nn.Module):
             order_emb1, worker_emb1 = order_emb.detach(), worker_emb.detach()
         else:
             order_emb1, worker_emb1 = order_emb, worker_emb
+
         q_matrix = self.attention(worker_emb1, order_emb1)
+        q_matrix2 = self.attention2(worker_emb1, order_emb1)
+
         if self.p_detach:
             order_emb, worker_emb = order_emb.detach(), worker_emb.detach()
         price_mu_matrix = self.attention_price_mu(worker_emb, order_emb)
@@ -240,7 +244,7 @@ class Assignment_Net(nn.Module):
         price_sigma_matrix = self.attention_price_sigma(worker_emb, order_emb)
         price_sigma_matrix = self.sigmoid(price_sigma_matrix) * 0.2 + 1e-5
 
-        return q_matrix, price_mu_matrix, price_sigma_matrix
+        return [q_matrix,q_matrix2], price_mu_matrix, price_sigma_matrix
 
     def worker_encode(self,x_state):
         x_state = x_state.float()

@@ -842,6 +842,9 @@ class Worker():
         x1, x2, x3 = norm(torch.from_numpy(order_state).to(self.device), torch.from_numpy(worker_state).to(self.device),
                           torch.from_numpy(self.current_orders).to(self.device))
         q_value, price_mu, price_sigma = self.Q_training(x1, x2, x3, torch.from_numpy(self.current_order_num).to(self.device), self.mask)
+
+        q_value = (q_value[0]+q_value[1])/2
+
         exploration_matrix = torch.rand_like(q_value)
         q_value[exploration_matrix < exploration_rate] = INF
         # 4. delete the Q value of not available workers
@@ -940,14 +943,17 @@ class Worker():
         # first calculate the advantage for PPO actor
         x1, x2, x3 = norm(new_order_state, worker_state, order_state)
         current_state_value_target, mu_old, sigma_old = self.Q_training(x1, x2, x3, order_num, mask)
+        current_state_value_target = (current_state_value_target[0] + current_state_value_target[1]) / 2
         current_state_value_target = torch.diag(current_state_value_target).detach()
         mu_old, sigma_old = torch.diag(mu_old).detach(), torch.diag(sigma_old).detach()
 
         x1, x2, x3 = norm(new_order_state_next, worker_state_next, order_state_next)
         next_state_value_target, _, _ = self.Q_training(x1, x2, x3, order_num_next, mask)
+        next_state_value_target = (next_state_value_target[0] + next_state_value_target[1]) / 2
         next_state_value_target = torch.diag(next_state_value_target).detach()
 
         next_state_value_target2, _, _ = self.Q_target(x1, x2, x3, order_num_next, mask)
+        next_state_value_target2 = (next_state_value_target2[0] + next_state_value_target2[1]) / 2
         next_state_value_target2 = torch.diag(next_state_value_target2).detach()
 
         is_done = (delta_t == -1).float()
@@ -989,9 +995,11 @@ class Worker():
 
                 if update_critic:
                     current_state_value, _, _ = self.Q_training(x1, x2, x3, order_num, mask)
+                    current_state_value = (current_state_value[0] + current_state_value[1]) / 2
                     current_state_value = torch.diag(current_state_value).detach()
                     x1, x2, x3 = norm(new_order_state_next, worker_state_next, order_state_next)
                     next_state_value, _, _ = self.Q_training(x1, x2, x3, order_num_next, mask)
+                    next_state_value = (next_state_value[0] + next_state_value[1]) / 2
                     next_state_value = torch.diag(next_state_value).detach()
 
                     is_done = (delta_t == -1).float()
@@ -1025,13 +1033,14 @@ class Worker():
 
                 x1, x2, x3 = norm(new_order_state_temp, worker_state_temp, order_state_temp)
                 current_state_value, price_mu, price_sigma = self.Q_training(x1, x2, x3, order_num_temp, mask_temp)
-                entropy_loss = gaussian_entropy(price_sigma)
+                # entropy_loss = gaussian_entropy(price_sigma)
+                current_state_value = (current_state_value[0] + current_state_value[1]) / 2
                 current_state_value, price_mu, price_sigma = torch.diag(current_state_value), torch.diag(
                     price_mu), torch.diag(price_sigma)
 
-                kl_loss = kl_divergence(price_mu, price_sigma, mu_old_temp, sigma_old_temp)
-                td_target_temp = td_target_temp.float()
-                critic_loss = self.loss_func(current_state_value, td_target_temp.detach())
+                # kl_loss = kl_divergence(price_mu, price_sigma, mu_old_temp, sigma_old_temp)
+                kl_loss = kl_div
+                entropy_loss = gaussian_entropy(price_sigma)
 
                 weight_class = torch.ones([2]).to(self.device)
                 for j in range(2):
@@ -1039,8 +1048,14 @@ class Worker():
                 weight_class = 1 / weight_class
                 weight = weight_class[mask_temp]
                 weight = weight * batch_size / 2
-                critic_loss = critic_loss * weight
-                critic_loss = torch.mean(critic_loss)
+
+                if update_critic:
+                    td_target_temp = td_target_temp.float()
+                    critic_loss = self.loss_func(current_state_value, td_target_temp.detach())
+                    critic_loss = critic_loss * weight
+                    critic_loss = torch.mean(critic_loss)
+                else:
+                    critic_loss = 0
 
                 normal_dist = torch.distributions.Normal(price_mu, price_sigma)
                 price_log_prob = normal_dist.log_prob(price_old_temp)
@@ -1077,11 +1092,14 @@ class Worker():
                     continue
                 self.optim.step()
 
-                c_loss.append(critic_loss.item())
+                if update_critic:
+                    c_loss.append(critic_loss.item())
                 a_loss.append(actor_loss.item())
 
         if update_critic:
             self.update_Qtarget()
+        else:
+            c_loss.append(0)
         # self.schedule.step()
         torch.set_grad_enabled(False)
         return np.mean(c_loss), np.mean(a_loss)
@@ -1107,7 +1125,8 @@ class Worker():
 
             x1, x2, x3 = norm(new_order_state, worker_state, order_state)
             current_state_value, _, _ = self.Q_training(x1, x2, x3, order_num, mask)
-            current_state_value = torch.diag(current_state_value)
+            current_state_value1, current_state_value2 = current_state_value[0], current_state_value[1]
+            current_state_value1, current_state_value2 = torch.diag(current_state_value1), torch.diag(current_state_value2)
 
             x1, x2, x3 = norm(new_order_state_next, worker_state_next, order_state_next)
             # next_state_value1, _, _ = self.Q_target(x1, x2, x3, order_num_next, mask)
@@ -1115,13 +1134,16 @@ class Worker():
             # next_state_value1, next_state_value2 = torch.diag(next_state_value1), torch.diag(next_state_value2)
             # next_state_value = torch.min(next_state_value1, next_state_value2)
             next_state_value, _, _ = self.Q_target(x1, x2, x3, order_num_next, mask)
-
+            next_state_value1, next_state_value2 = next_state_value[0], next_state_value[1]
+            next_state_value1, next_state_value2 = torch.diag(next_state_value1), torch.diag(next_state_value2)
 
             is_done = (delta_t == -1).float()
-            td_target = reward + self.gamma ** delta_t * next_state_value.detach() * (1 - is_done)
-            td_target = td_target.float()
+            td_target1 = reward + self.gamma ** delta_t * next_state_value1.detach() * (1 - is_done)
+            td_target1 = td_target1.float()
+            td_target2 = reward + self.gamma ** delta_t * next_state_value2.detach() * (1 - is_done)
+            td_target2 = td_target2.float()
 
-            critic_loss = self.loss_func(current_state_value, td_target.detach())
+            critic_loss = self.loss_func(current_state_value1, td_target2.detach()) + self.loss_func(current_state_value2, td_target1.detach())
             # loss = critic_loss
 
             weight_class = torch.ones([2]).to(self.device)
