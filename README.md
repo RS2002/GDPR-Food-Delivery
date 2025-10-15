@@ -1,10 +1,12 @@
 # DFD: Data-privacy-regulation Food Delivery
 
-**Article:** Zijian Zhao, Sen Li\*, "The Impacts of Data Privacy Regulations on Food-Delivery Platforms", Transportation Research Part C: Emerging Technologies, 2025
+**Article:** Zijian Zhao, Sen Li\*, "[The Impacts of Data Privacy Regulations on Food-Delivery Platforms](https://www.sciencedirect.com/science/article/pii/S0968090X25003687)", Transportation Research Part C: Emerging Technologies, 2025
 
 **Proposal:** Zijian Zhao, "Towards Fairness in Transportation Gig Markets: Identifying, Imitating, and Mitigating Algorithm Discrimination via Deep Reinforcement Learning" (under review, supervised by Prof. Sen Li)
 
 **Acknowledgement:** The code is based on our previous work [Discriminatory-Food-Delivery](https://github.com/RS2002/Discriminatory-Food-Delivery) and the work of [‪Yulong Hu‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao). Special thanks to [Yitong Shang](https://yitongshang2021.github.io/) for providing the synthetic food delivery data.
+
+**Notice:** A new version of this work will be provided at [AV-Food-Delivery](https://github.com/RS2002/AV-Food-Delivery/tree/main/baseline).
 
 
 
@@ -12,9 +14,9 @@
 
 ![](./img/workflow.png)
 
-![](./img/main.png)
+<img src="./img/main.png" style="zoom:50%;" />
 
-![](./img/network.png)
+<img src="./img/network.png" style="zoom:50%;" />
 
 
 
@@ -65,6 +67,17 @@ python eval.py --probability_worker --gdpr_path <gdpr_model_path> --benchmark_pa
 ## 4. Reference
 
 ```
-
+@article{ZHAO2025105364,
+title = {The impacts of data privacy regulations on food-delivery platforms},
+journal = {Transportation Research Part C: Emerging Technologies},
+volume = {181},
+pages = {105364},
+year = {2025},
+issn = {0968-090X},
+doi = {https://doi.org/10.1016/j.trc.2025.105364},
+url = {https://www.sciencedirect.com/science/article/pii/S0968090X25003687},
+author = {Zijian Zhao and Sen Li},
+keywords = {Transportation network companies, Food-delivery market, General data protection regulation (GDPR), Multi-agent reinforcement learning}
+}
 ```
 
