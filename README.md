@@ -2,7 +2,7 @@
 
 **Article:** Zijian Zhao, Sen Li\*, "[The Impacts of Data Privacy Regulations on Food-Delivery Platforms](https://www.sciencedirect.com/science/article/pii/S0968090X25003687)", Transportation Research Part C: Emerging Technologies, 2025
 
-**Proposal:** Zijian Zhao, "Towards Fairness in Transportation Gig Markets: Identifying, Imitating, and Mitigating Algorithm Discrimination via Deep Reinforcement Learning" (under review, supervised by Prof. Sen Li)
+**Proposal:** Zijian Zhao, "Towards Fairness in Transportation Gig Markets: Identifying, Imitating, and Mitigating Algorithm Discrimination via Deep Reinforcement Learning", 2026 Annual AAAI Conference on Artificial Intelligence (AAAI) / Special Interest Group on Artificial Intelligence (SIGAI) Doctoral Consortium, supervised by Prof. Sen Li
 
 **Acknowledgement:** The code is based on our previous work [Discriminatory-Food-Delivery](https://github.com/RS2002/Discriminatory-Food-Delivery) and the work of [‪Yulong Hu‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao). Special thanks to [Yitong Shang](https://yitongshang2021.github.io/) for providing the synthetic food delivery data.
 
