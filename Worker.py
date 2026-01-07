@@ -1324,7 +1324,8 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
         # go forward <step>
         step_minute = step
         step = step * 60
-        for i in range(len(current_travel_time)):
+        total_num = len(current_travel_time)
+        for i in range(total_num):
             if step >= current_travel_time[i]:
                 step -= current_travel_time[i]
             else:
@@ -1332,9 +1333,8 @@ def single_update(observe_space, current_orders, current_orders_num, positive_hi
                 current_travel_time = current_travel_time[i:]
                 current_travel_route = current_travel_route[i:]
                 break
-            if i == len(current_travel_time) - 1:  # finish all orders
-                observe_space[0], observe_space[1] = current_travel_route[-1][1], current_travel_route[-1][
-                    0]  # lat, lon
+            if i == total_num - 1:  # finish all orders
+                observe_space[0], observe_space[1] = current_travel_route[-1][1], current_travel_route[-1][0]  # lat, lon
                 current_travel_time = []
                 current_travel_route = []
 
