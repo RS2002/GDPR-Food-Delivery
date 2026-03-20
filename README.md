@@ -6,7 +6,7 @@ Journal Version: Zijian Zhao, Sen Li\*, "[The Impacts of Data Privacy Regulation
 
 Conference Version: Zijian Zhao, Sen Li\*, "Discriminatory Order Assignment and Payment Setting on Food-Delivery Platforms: The Implicit Algorithmic Biases", 2026 INFORMS Transportation Science and Logistics Conference (TSL)
 
-**Proposal:** Zijian Zhao, "[Towards Fairness in Transportation Gig Markets: Identifying, Imitating, and Mitigating Algorithm Discrimination via Deep Reinforcement Learning](https://underline.io/events/501/sessions/22098/lecture/138849-955-towards-fairness-in-transportation-gig-markets-identifying-imitating-and-mitigating-algorithm-discrimination-via-deep-reinforcement-learning?tab=poster)", 2026 Annual AAAI Conference on Artificial Intelligence (AAAI) / Special Interest Group on Artificial Intelligence (SIGAI) Doctoral Consortium, supervised by Prof. Sen Li
+**Proposal:** Zijian Zhao, "[Towards Fairness in Transportation Gig Markets: Identifying, Imitating, and Mitigating Algorithm Discrimination via Deep Reinforcement Learning](https://ojs.aaai.org/index.php/AAAI/article/view/42177)", 2026 Annual AAAI Conference on Artificial Intelligence (AAAI) / Special Interest Group on Artificial Intelligence (SIGAI) Doctoral Consortium, supervised by Prof. Sen Li
 
 **Acknowledgement:** The code is based on our previous work [Discriminatory-Food-Delivery](https://github.com/RS2002/Discriminatory-Food-Delivery) and the work of [‪Yulong Hu‬](https://scholar.google.com/citations?user=IfVrhp0AAAAJ&hl=zh-CN&oi=ao). Special thanks to [Yitong Shang](https://yitongshang2021.github.io/) for providing the synthetic food delivery data.
 
@@ -82,6 +82,20 @@ doi = {https://doi.org/10.1016/j.trc.2025.105364},
 url = {https://www.sciencedirect.com/science/article/pii/S0968090X25003687},
 author = {Zijian Zhao and Sen Li},
 keywords = {Transportation network companies, Food-delivery market, General data protection regulation (GDPR), Multi-agent reinforcement learning}
+}
+```
+
+```
+@article{Zhao_2026, 
+title={Towards Fairness in Transportation Gig Markets: Identifying, Imitating, and Mitigating Algorithm Discrimination via Deep Reinforcement Learning}, 
+volume={40}, 
+url={https://ojs.aaai.org/index.php/AAAI/article/view/42177}, 
+number={48}, 
+journal={Proceedings of the AAAI Conference on Artificial Intelligence}, 
+author={Zhao, Zijian}, 
+year={2026}, 
+month={Mar.}, 
+pages={41102-41103} 
 }
 ```
 
